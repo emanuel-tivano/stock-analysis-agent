@@ -21,13 +21,13 @@
 {"id": "http503", "input": "Analiza técnicamente GGAL", "status": "ERROR", "assessment": "SOURCE_ERROR", "conclusion": null, "tools": ["resolve_asset", "get_market_history"], "http": 503}
 {"id": "timeout", "input": "Analiza técnicamente GGAL", "status": "ERROR", "assessment": "SOURCE_ERROR", "conclusion": null, "tools": ["resolve_asset", "get_market_history"], "failure": "timeout"}
 {"id": "invalid_payload", "input": "Analiza técnicamente GGAL", "status": "ERROR", "assessment": "INVALID_DATA", "conclusion": null, "tools": ["resolve_asset", "get_market_history"], "failure": "payload"}
-{"id": "ambiguous", "input": "¿Cómo está la tendencia de Galicia?", "status": "CLARIFY", "assessment": "INSUFFICIENT_DATA", "conclusion": null, "tools": ["resolve_asset"]}
-{"id": "company_name", "input": "No sé el ticker, quiero analizar Banco Galicia", "status": "CLARIFY", "assessment": "INSUFFICIENT_DATA", "conclusion": null, "tools": ["resolve_asset"]}
-{"id": "out_of_scope", "input": "Analiza técnicamente AAPL", "status": "CLARIFY", "assessment": "INSUFFICIENT_DATA", "conclusion": null, "tools": ["resolve_asset"]}
+{"id": "ambiguous", "input": "¿Cómo está la tendencia de Galicia?", "status": "CLARIFY", "technical_status": "AMBIGUOUS_ASSET", "conclusion": null, "tools": ["resolve_asset"]}
+{"id": "company_name", "input": "No sé el ticker, quiero analizar Banco Galicia", "status": "CLARIFY", "technical_status": "AMBIGUOUS_ASSET", "conclusion": null, "tools": ["resolve_asset"]}
+{"id": "out_of_scope", "input": "Analiza técnicamente AAPL", "status": "CLARIFY", "technical_status": "ASSET_NOT_FOUND", "conclusion": null, "tools": ["resolve_asset"]}
 {"id": "explicit_technical", "input": "Quiero un análisis técnico de GGAL", "status": "ANSWER", "assessment": "COMPLETE", "conclusion": "BULLISH", "tools": ["resolve_asset", "get_market_history", "calculate_technical_indicators"]}
 {"id": "full_unsupported", "input": "Hacé un análisis integral de GGAL", "status": "ABSTAIN", "assessment": "INSUFFICIENT_DATA", "conclusion": null, "tools": []}
 {"id": "momentum_bma", "input": "Revisa el momentum de BMA", "status": "ANSWER", "assessment": "COMPLETE", "conclusion": "BULLISH", "tools": ["resolve_asset", "get_market_history", "calculate_technical_indicators"], "ticker": "BMA"}
-{"id": "compare", "input": "Compara técnicamente GGAL y BMA", "status": "CLARIFY", "assessment": "INSUFFICIENT_DATA", "conclusion": null, "tools": ["resolve_asset"]}
+{"id": "compare", "input": "Compara técnicamente GGAL y BMA", "status": "CLARIFY", "technical_status": "AMBIGUOUS_ASSET", "conclusion": null, "tools": ["resolve_asset"]}
 {"id": "rsi", "input": "RSI de GGAL", "status": "ANSWER", "assessment": "COMPLETE", "conclusion": "BULLISH", "tools": ["resolve_asset", "get_market_history", "calculate_technical_indicators"]}
 {"id": "gap", "input": "Analiza técnicamente GGAL", "status": "ANSWER", "assessment": "COMPLETE", "conclusion": "BULLISH", "tools": ["resolve_asset", "get_market_history", "calculate_technical_indicators"], "gap": true}
 {"id": "explicit_both_unsupported", "input": "Análisis técnico y fundamental de GGAL", "status": "ABSTAIN", "assessment": "INSUFFICIENT_DATA", "conclusion": null, "tools": []}

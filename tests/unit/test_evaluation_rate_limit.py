@@ -83,7 +83,8 @@ def test_multiple_steps_within_one_agent_run(clock, make_agent):
         provider = CompatibleLLMProvider(client, "https://llm.test", "model", "offline-key")
         agent, repo = make_agent(provider=provider)
         assert agent.run("XXXX").status == "CLARIFY"
-    assert starts == [0, 15]
+    # A resolved NOT_FOUND outcome is terminal; no second LLM decision is needed.
+    assert starts == [0]
     assert len(repo.records[0][0].tool_calls) == 1
 
 

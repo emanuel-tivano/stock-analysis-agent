@@ -5,6 +5,7 @@ from merval_agent.adapters.bolsar_parser import folded
 from merval_agent.agents.intent import explicit_analysis_type, explicit_full_request
 from merval_agent.domain.models import AgentDecision, AgentState, UserIntent
 from merval_agent.domain.policy import DEFAULT_TECHNICAL_RANGE
+from merval_agent.tools.assets import CATALOG
 
 
 class FakeLLMProvider:
@@ -32,11 +33,17 @@ class FakeLLMProvider:
                     confidence=1,
                     reason="El análisis integral requiere métricas fundamentales aún no implementadas; solicitá un análisis técnico.",
                 )
+            catalog_terms = {
+                term
+                for ticker, (_, _, aliases) in CATALOG.items()
+                for term in (ticker.lower(), *aliases)
+            }
             relevant = (
                 bool(re.fullmatch(r"[A-Z]{2,5}", state.user_request.strip()))
                 or technical
                 or fundamental
                 or any(word in text for word in ("analiz", "analisis", "accion", "byma", "merval"))
+                or bool(set(re.findall(r"[a-z]+", text)) & catalog_terms)
             )
             if not relevant:
                 return AgentDecision(

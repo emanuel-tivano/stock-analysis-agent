@@ -14,11 +14,24 @@ CATALOG = {
 }
 
 
+def _requested_symbol(query: str) -> str | None:
+    candidates = re.findall(r"(?<!\w)[A-Z][A-Z0-9._-]{1,29}(?!\w)", query)
+    candidates = [
+        value for value in candidates if value not in {"ADR", "NYSE", "BYMA", "ARS", "USD"}
+    ]
+    return next(
+        (value for value in candidates if value in CATALOG), candidates[-1] if candidates else None
+    )
+
+
 def resolve_asset(query: str) -> AssetResolution:
     tokens = set(re.findall(r"[a-z]+", folded(query)))
+    requested_symbol = _requested_symbol(query)
     if tokens & {"adr", "nyse", "usd", "cedear"}:
         return AssetResolution(
+            status="AMBIGUOUS",
             confidence=0,
+            requested_symbol=requested_symbol,
             alternatives=[
                 "Confirmar acción local BYMA en ARS; otros instrumentos fuera de cobertura"
             ],
@@ -28,11 +41,26 @@ def resolve_asset(query: str) -> AssetResolution:
         t for t, (_, _, aliases) in CATALOG.items() if any(a in tokens for a in aliases)
     ]
     if len(matches) != 1:
-        return AssetResolution(confidence=0, alternatives=matches)
+        return AssetResolution(
+            status="AMBIGUOUS" if matches else "NOT_FOUND",
+            confidence=0,
+            alternatives=matches,
+            requested_symbol=requested_symbol,
+        )
     ticker = matches[0]
     name, kind, _ = CATALOG[ticker]
     if not exact and ticker == "GGAL":
         return AssetResolution(
-            confidence=0.6, alternatives=["GGAL (acción BYMA, ARS)", "GGAL (ADR NYSE, USD)"]
+            status="AMBIGUOUS",
+            confidence=0.6,
+            requested_symbol=requested_symbol,
+            alternatives=["GGAL (acción BYMA, ARS)", "GGAL (ADR NYSE, USD)"],
         )
-    return AssetResolution(ticker=ticker, company_name=name, company_type=kind, confidence=1)
+    return AssetResolution(
+        status="RESOLVED",
+        ticker=ticker,
+        company_name=name,
+        company_type=kind,
+        confidence=1,
+        requested_symbol=requested_symbol,
+    )

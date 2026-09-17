@@ -45,11 +45,14 @@ La captura pública es opt-in: `$env:RUN_LIVE_TESTS="1"` y luego
 ## Arquitectura y trazabilidad
 
 ```text
-FastAPI → EquityAgent ↔ LLMProvider
-              ↓ decisión validada
-          ToolRegistry → adapters HTTP / cálculos puros / retrieval local
-              ↓ observación tipada
-          AgentState → reporte / repository SQLite
+Web Chat → POST /chat → presenter determinístico ┐
+                                                  ├→ EquityAgent ↔ LLMProvider
+Cliente API → POST /agent/run → FinalAnalysis ───┘       ↓ decisión validada
+                                                     ToolRegistry
+                                                        ↓
+                                           adapters HTTP / cálculos Python
+                                                        ↓
+                                           AgentState → SQLite + reporte
 ```
 
 - **DATO:** OHLCV, métricas derivadas o metadata de documentos, con fecha y fuente.
@@ -86,6 +89,32 @@ También se verifica instalación editable en un entorno nuevo con
 python -m uvicorn merval_agent.api.app:app --host 127.0.0.1 --port 8000
 ```
 
+## Interfaz web
+
+Con la aplicación iniciada, abrir [http://127.0.0.1:8000/](http://127.0.0.1:8000/).
+No hace falta usar PowerShell, `curl`, Postman ni conocer el contrato JSON. La consulta se
+escribe en lenguaje natural; por ejemplo: `Analizá técnicamente GGAL`, `Analizá YPFD` o
+`¿Qué señales técnicas tiene GGAL?`.
+
+La interfaz muestra primero la conclusión, la confianza, el resumen, la tendencia, el
+momentum, RSI, MACD y las advertencias. Los indicadores, fuentes y detalles técnicos quedan
+en secciones desplegables. Si la última barra es una cotización provisional, la interfaz lo
+indica explícitamente. El navegador trata el texto de usuario y de la API como texto, no como
+HTML, y sólo permite abrir fuentes HTTP/HTTPS.
+
+`POST /chat` es el adapter de presentación usado por la interfaz. Traduce de forma
+determinística el resultado ya calculado por Python; no hace una llamada adicional al LLM ni
+modifica las señales. `POST /agent/run` sigue disponible, sin cambios, para obtener el JSON
+técnico completo necesario para tests, auditoría y debugging. También siguen disponibles
+`/docs` y `/health`.
+
+La UI conserva el `session_id` en la pestaña durante la conversación y “Nueva conversación”
+inicia otro agrupador. Esta versión **no reconstruye contexto ni resuelve follow-ups por
+memoria**: SQLite agrupa ejecuciones, pero cada consulta debe ser autocontenida. La cobertura
+de activos continúa limitada al catálogo actual y la disponibilidad del análisis depende de
+las fuentes externas configuradas. El provider por defecto es Fake para orquestación, pero
+los datos de mercado de la aplicación siguen siendo reales.
+
 En otra consola:
 
 ```powershell
@@ -104,6 +133,9 @@ Los tests utilizan `MockTransport` y no necesitan internet.
 parcial: datos técnicos disponibles y abstención fundamental. `technical.status` expresa la
 lectura BULLISH/BEARISH/NEUTRAL/MIXED cuando hay datos utilizables. `technical.assessment.status`
 separa COMPLETE, PARTIAL, INSUFFICIENT_DATA, SOURCE_ERROR, STALE, INVALID_DATA y UNVERIFIED.
+Una resolución fallida termina antes de consultar mercado: `technical.status=ASSET_NOT_FOUND`
+o `AMBIGUOUS_ASSET`, con `technical.assessment=null`. Así se distingue de un ticker soportado
+con historia insuficiente, que conserva `technical.status=INSUFFICIENT_DATA`.
 Un pedido técnico ordinario no requiere libros. Las solicitudes explícitas según Murphy/Graham
 se abstienen de atribuirles conclusiones mientras el retrieval sea demo.
 `fundamental.status=NOT_REQUESTED` indica que esa dimensión no se pidió.
@@ -231,15 +263,18 @@ Remove-Item Env:RUN_LIVE_TESTS
 ```
 
 Ver [evaluaciones](evals/README.md). Evals fake no miden calidad de un modelo real.
-La prueba `smoke_api.py` inicia Uvicorn en un puerto local disponible, verifica health y
-una aclaración sin internet, y detiene su propio proceso. Resultados de esta iteración:
+La prueba `smoke_api.py` inicia Uvicorn y un stub local de mercado en puertos disponibles;
+verifica `/`, los assets, PPSA/XYZINVALIDO sin llamadas de mercado, GGAL/PAMP, un GGAL con
+historia insuficiente y `/agent/run`; luego detiene los procesos propios. No requiere internet
+ni credenciales. Resultados históricos:
 [verificación](docs/verification.md).
 
 ## Límites y Fase 2
 
 Catálogo inicial: GGAL, BMA, SUPV, PAMP, YPFD, ALUA, TRAN. Galicia se aclara por instrumento;
 ADR/NYSE/USD quedan fuera de cobertura. No hay cobertura universal del Merval ni métricas de
-balances, valoración Graham, vector DB, multiagente, LangGraph, deploy o UI.
+balances, valoración Graham, vector DB, multiagente, LangGraph, deploy o memoria
+conversacional contextual.
 
 SQLite conserva cada ejecución, pedido, estado final, trace de tools sanitizado y resumen;
 no reconstruye conversaciones ni reanuda CLARIFY automáticamente. `session_id` agrupa ejecuciones.

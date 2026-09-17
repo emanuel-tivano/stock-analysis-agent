@@ -173,6 +173,8 @@ def score(case, state, result, registry, persisted, http_ok=True):
     axes["tool_arguments"] = args_ok
     a = result.technical.assessment
     axes["classification"] = result.status == case["status"]
+    if case.get("technical_status"):
+        axes["classification"] &= result.technical.status == case["technical_status"]
     if case.get("assessment"):
         axes["classification"] &= bool(a and a.status == case["assessment"])
     if case.get("conclusion"):

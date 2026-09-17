@@ -81,8 +81,15 @@ class EquityAgent:
         degraded = False
         while state.status == "RUNNING" and state.iteration_count < self.max_steps:
             state.iteration_count += 1
-            state.technical_assessment = assess(
-                state.technical_data, state.technical_metrics, now(), self.stale_after_days
+            state.technical_assessment = (
+                assess(
+                    state.technical_data,
+                    state.technical_metrics,
+                    now(),
+                    self.stale_after_days,
+                )
+                if state.resolved_asset and state.resolved_asset.status == "RESOLVED"
+                else None
             )
             try:
                 validated_provider = getattr(self.provider, "decide_validated", None)
@@ -236,6 +243,42 @@ class EquityAgent:
                             else {}
                         ),
                     )
+                    if (
+                        result.success
+                        and call.name == "resolve_asset"
+                        and state.resolved_asset
+                        and state.resolved_asset.status != "RESOLVED"
+                    ):
+                        resolution = state.resolved_asset
+                        state.status = "CLARIFY"
+                        if resolution.status == "NOT_FOUND":
+                            requested = resolution.requested_symbol
+                            summary = (
+                                "No pude identificar ese activo. "
+                                + (
+                                    f"No encontré {requested} entre los instrumentos soportados actualmente. "
+                                    if requested
+                                    else "No encontré ese ticker o empresa entre los instrumentos soportados actualmente. "
+                                )
+                                + "Verificá el ticker o ingresá el nombre de la empresa."
+                            )
+                            state.missing_information.append(
+                                "Ticker o nombre de empresa incluido en el universo soportado"
+                            )
+                        else:
+                            summary = (
+                                "El activo es ambiguo. Indicá el ticker exacto o especificá el "
+                                "instrumento y mercado que querés analizar."
+                            )
+                            state.missing_information.append("Ticker e instrumento inequívocos")
+                        interpretation = ""
+                        event(
+                            "ASSET_RESOLUTION_FAILED",
+                            state,
+                            reason=resolution.status,
+                            requested_symbol=resolution.requested_symbol,
+                            alternatives_count=len(resolution.alternatives),
+                        )
                 else:
                     state.status = {
                         "FINAL_ANSWER": "ANSWER",

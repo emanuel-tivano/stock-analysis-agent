@@ -23,6 +23,35 @@ def build_report(
     )
     kind = "full" if unsupported_full else state.intent.analysis_type
     asset = state.resolved_asset
+    if asset and asset.status != "RESOLVED":
+        resolution_status = "ASSET_NOT_FOUND" if asset.status == "NOT_FOUND" else "AMBIGUOUS_ASSET"
+        technical = Dimension(
+            status=resolution_status if kind != "fundamental" else "NOT_REQUESTED"
+        )
+        fundamental = Dimension(
+            status=resolution_status if kind != "technical" else "NOT_REQUESTED"
+        )
+        return FinalAnalysis(
+            status=state.status,
+            analysis_type=kind,
+            executive_summary=summary,
+            technical=technical,
+            fundamental=fundamental,
+            data_quality=DataQuality(
+                missing_information=list(dict.fromkeys(state.missing_information)),
+                abstentions=[
+                    dimension
+                    for dimension, requested in (
+                        ("technical", kind != "fundamental"),
+                        ("fundamental", kind != "technical"),
+                    )
+                    if requested
+                ],
+            ),
+            trace_id=state.trace_id,
+            session_id=state.session_id,
+            errors=state.errors,
+        )
     historical_bars = (
         history.bars[:-1]
         if history and history.enrichment_status == "appended"

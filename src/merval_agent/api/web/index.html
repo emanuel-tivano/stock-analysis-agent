@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Interfaz conversacional accesible para análisis técnico de acciones argentinas.">
+    <title>Stock Analysis Agent</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+    <script src="/assets/app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#composer">Ir a la consulta</a>
+    <header class="site-header">
+      <div>
+        <p class="eyebrow">Mercado argentino</p>
+        <h1>Stock Analysis Agent</h1>
+        <p class="subtitle">Análisis técnico asistido, explicado en lenguaje claro.</p>
+      </div>
+      <button id="new-conversation" class="secondary-button" type="button">
+        Nueva conversación
+      </button>
+    </header>
+
+    <main class="app-shell">
+      <section class="intro" aria-labelledby="intro-title">
+        <h2 id="intro-title">Consultá en lenguaje natural</h2>
+        <p>
+          Pedí una lectura técnica de una acción BYMA. La respuesta separa la conclusión,
+          los indicadores, las advertencias y sus fuentes.
+        </p>
+        <div class="examples" aria-label="Ejemplos de consultas">
+          <button class="example" type="button">Analizá técnicamente GGAL</button>
+          <button class="example" type="button">Analizá técnicamente YPFD</button>
+          <button class="example" type="button">¿Cómo está GGAL desde el punto de vista técnico?</button>
+        </div>
+      </section>
+
+      <section
+        id="conversation"
+        class="conversation is-empty"
+        data-state="empty"
+        aria-labelledby="conversation-title"
+      >
+        <h2 id="conversation-title" class="visually-hidden">Historial de conversación</h2>
+        <div id="messages" class="messages" role="log" aria-live="polite" aria-relevant="additions">
+          <article class="welcome-card">
+            <h3>¿Qué activo querés analizar?</h3>
+            <p>Por ejemplo: “Analizá técnicamente GGAL”.</p>
+            <p class="scope-note">Cobertura actual: acciones locales seleccionadas. No constituye asesoramiento financiero.</p>
+          </article>
+        </div>
+
+        <div id="status" class="status" role="status" aria-live="polite"></div>
+        <div id="error" class="error-banner" role="alert" hidden></div>
+
+        <form id="composer" class="composer" novalidate>
+          <label for="message">Tu consulta</label>
+          <div class="composer-row">
+            <textarea
+              id="message"
+              name="message"
+              rows="2"
+              maxlength="2000"
+              placeholder="Escribí tu consulta…"
+              aria-describedby="message-help"
+              required
+            ></textarea>
+            <button id="send" class="primary-button" type="submit">Enviar</button>
+          </div>
+          <p id="message-help" class="help-text">
+            Enter envía. Shift + Enter agrega una nueva línea.
+          </p>
+        </form>
+      </section>
+    </main>
+  </body>
+</html>

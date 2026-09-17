@@ -42,11 +42,37 @@ class UserIntent(Model):
 
 
 class AssetResolution(Model):
+    status: Literal["RESOLVED", "AMBIGUOUS", "NOT_FOUND"] = "NOT_FOUND"
     ticker: Ticker | None = None
     company_name: str | None = None
     company_type: CompanyType = CompanyType.OTHER
     confidence: float = Field(ge=0, le=1)
     alternatives: list[str] = Field(default_factory=list)
+    requested_symbol: str | None = Field(default=None, max_length=30, pattern=r"^[A-Z0-9._-]+$")
+
+    @model_validator(mode="before")
+    @classmethod
+    def infer_legacy_status(cls, value):
+        if isinstance(value, dict) and "status" not in value:
+            value = dict(value)
+            value["status"] = (
+                "RESOLVED"
+                if value.get("ticker")
+                else "AMBIGUOUS"
+                if value.get("alternatives")
+                else "NOT_FOUND"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def valid_resolution(self):
+        if self.status == "RESOLVED" and self.ticker is None:
+            raise ValueError("RESOLVED asset requires ticker")
+        if self.status != "RESOLVED" and self.ticker is not None:
+            raise ValueError("Unresolved asset cannot expose ticker")
+        if self.status == "AMBIGUOUS" and not self.alternatives:
+            raise ValueError("AMBIGUOUS asset requires alternatives")
+        return self
 
 
 class ErrorInfo(Model):
@@ -284,6 +310,8 @@ class Dimension(Model):
         "STALE",
         "INVALID_DATA",
         "UNVERIFIED",
+        "ASSET_NOT_FOUND",
+        "AMBIGUOUS_ASSET",
     ] = "INSUFFICIENT_DATA"
     metrics: TechnicalMetrics | None = None
     history_only_metrics: TechnicalMetrics | None = None

@@ -16,7 +16,7 @@ dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-merval_agent = ["skills/**/*.md"]
+merval_agent = ["skills/**/*.md", "api/web/*.html", "api/web/*.css", "api/web/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

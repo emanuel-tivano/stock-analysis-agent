@@ -64,26 +64,40 @@ def test_golden_trace(make_agent, tmp_path, message, market_status, status, tick
     assert trace["session_id"] == result.session_id
     assert trace["timestamp"]
     assert [e["tool_name"] for e in trace["events"] if e["event"] == "TOOL_STARTED"] == tools
-    expected = [("AGENT_STARTED", 0)]
-    for step, tool in enumerate(tools, 1):
+    if ticker is None and tools == ["resolve_asset"]:
+        expected = [
+            ("AGENT_STARTED", 0),
+            ("DECISION_MADE", 1),
+            ("TOOL_STARTED", 1),
+            ("TOOL_SUCCEEDED", 1),
+            ("ASSET_RESOLUTION_FAILED", 1),
+            ("STATE_UPDATED", 1),
+            ("STATE_UPDATED", 1),
+            ("AGENT_FINISHED", 1),
+        ]
+    else:
+        expected = [("AGENT_STARTED", 0)]
+        for step, tool in enumerate(tools, 1):
+            expected.extend(
+                [
+                    (name, step)
+                    for name in (
+                        "DECISION_MADE",
+                        "TOOL_STARTED",
+                        "TOOL_FAILED"
+                        if market_status != 200 and tool == "get_market_history"
+                        else "TOOL_SUCCEEDED",
+                        "STATE_UPDATED",
+                    )
+                ]
+            )
+        last = len(tools) + 1
         expected.extend(
-            [
-                (name, step)
-                for name in (
-                    "DECISION_MADE",
-                    "TOOL_STARTED",
-                    "TOOL_FAILED"
-                    if market_status != 200 and tool == "get_market_history"
-                    else "TOOL_SUCCEEDED",
-                    "STATE_UPDATED",
-                )
-            ]
+            [(name, last) for name in ("DECISION_MADE", "STATE_UPDATED", "STATE_UPDATED")]
         )
-    last = len(tools) + 1
-    expected.extend([(name, last) for name in ("DECISION_MADE", "STATE_UPDATED", "STATE_UPDATED")])
-    if status == "ABSTAIN":
-        expected.append(("AGENT_ABSTAINED", last))
-    expected.append(("AGENT_FINISHED", last))
+        if status == "ABSTAIN":
+            expected.append(("AGENT_ABSTAINED", last))
+        expected.append(("AGENT_FINISHED", last))
     assert [(e["event"], e["step"]) for e in trace["events"]] == expected
     for event in trace["events"]:
         assert event["trace_id"] == result.trace_id

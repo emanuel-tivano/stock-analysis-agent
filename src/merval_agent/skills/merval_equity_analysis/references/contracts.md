@@ -12,6 +12,9 @@ al usuario. ABSTAIN es falta de evidencia; ERROR es falla técnica. technical.st
 BULLISH/BEARISH/NEUTRAL/MIXED con datos utilizables. technical.assessment.status representa
 COMPLETE/PARTIAL/INSUFFICIENT_DATA/SOURCE_ERROR/STALE/INVALID_DATA/UNVERIFIED.
 INSUFFICIENT_DATA no significa neutralidad ni falta de RAG en pedidos técnicos ordinarios.
+AssetResolution distingue RESOLVED, AMBIGUOUS y NOT_FOUND. Los dos últimos detienen el loop
+antes de mercado y se publican como technical.status AMBIGUOUS_ASSET o ASSET_NOT_FOUND, con
+assessment ausente; no deben degradarse a INSUFFICIENT_DATA.
 metrics conserva cifras Python; assessment conserva señales, tendencia, momentum, confianza
 de evidencia y fechas; interpretation se redacta desde esas señales (narrative_origin=deterministic).
 
