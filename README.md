@@ -1,6 +1,10 @@
 # Merval Equity Analyst AI
 
-Estado actual: [análisis técnico v4, resiliencia y pruebas reales](docs/technical-v4.md).
+Estado actual: [cierre y evaluación de la V1 técnica](docs/technical-v1-closure.md):
+628 tests aprobados, 4 opt-in omitidos; Fake histórico 17/17 y técnico 33/33.
+Capturas reales de GGAL/BMA contrastadas con un oráculo independiente; no se ejecutó
+una nueva evaluación con LLM real en este cierre.
+Antecedente: [análisis técnico v4, resiliencia y pruebas reales](docs/technical-v4.md).
 Antecedente: [análisis técnico v3 y verificación](docs/technical-v3.md).
 Antecedente: [auditoría integral del 16/09/2026](docs/audit-2026-09-16.md).
 La quote se incorpora como provisional, el volumen ausente no se reemplaza por cero
@@ -22,7 +26,8 @@ proveedor, cache ni lógica bursátil. No emite recomendaciones BUY/SELL.
 - Historial real de Market Tracker y metadata documental de Bolsar mediante `httpx`.
 - SMA20/50, EMA12/26, RSI14 Wilder, MACD/señal, variación, extremos y volumen promedio,
   calculados exclusivamente en Python.
-- FastAPI, SQLite, eventos recuperables por `trace_id`, tests offline y siete evals fake.
+- FastAPI, SQLite, eventos recuperables por `trace_id`, tests offline y datasets Fake
+  histórico (17 casos) y técnico V1 (33 casos con 12 ejes separados).
 - Providers Fake, OpenAI-compatible (incluido servidor local) y Gemini nativo; pruebas
   determinísticas y evaluaciones reales Gemini documentadas en la auditoría de Fase 2.
 
@@ -31,6 +36,11 @@ valida, ejecuta o termina y vuelve a decidir con las observaciones. Los tests de
 el provider puede elegir metodología antes del mercado y cambiar decisiones tras errores.
 El **FakeLLMProvider es un simulador con reglas**, útil para pruebas, no un LLM ni evidencia
 de razonamiento autónomo real. La evidencia del modelo real se registra por separado.
+
+Demo técnica offline reproducible: `.venv\Scripts\python.exe scripts/eval_technical_v1.py`.
+Crea un directorio nuevo con respuestas HTTP completas, snapshots, hashes y SQLite.
+La captura pública es opt-in: `$env:RUN_LIVE_TESTS="1"` y luego
+`.venv\Scripts\python.exe scripts/capture_technical_v1.py --live`; no lee `.env` ni llama a un LLM.
 
 ## Arquitectura y trazabilidad
 

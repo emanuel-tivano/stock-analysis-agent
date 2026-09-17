@@ -21,7 +21,7 @@ from merval_agent.domain.models import AgentState
         ("M\u00e9tricas fundamentales de PAMP", "fundamental"),
         ("Analiz\u00e1 GGAL", None),
         ("Analiz\u00e1 PAMP seg\u00fan Graham", None),
-        ("Tendencia de ALUA", None),
+        ("Tendencia de ALUA", "technical"),
         ("An\u00e1lisis t\u00e9cnico y fundamental de GGAL", None),
     ],
 )

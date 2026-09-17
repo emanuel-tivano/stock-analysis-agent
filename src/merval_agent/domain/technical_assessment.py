@@ -98,8 +98,12 @@ def assess(
         policy="INCLUDE_PROVISIONAL_OHLC" if included else "HISTORY_ONLY",
     )
     fetched_date = history.fetched_at.astimezone(MARKET_TIMEZONE).date()
-    if (result.as_of > today or history.fetched_at > at or base_date > fetched_date
-        or (quote and (quote.observed_at > quote.fetched_at or quote.fetched_at > at))):
+    if (
+        result.as_of > today
+        or history.fetched_at > at
+        or base_date > fetched_date
+        or (quote and (quote.observed_at > quote.fetched_at or quote.fetched_at > at))
+    ):
         result.status, result.freshness = "INVALID_DATA", "INVALID"
         result.warnings.append("Fechas futuras o histórico posterior a su recepción.")
         return result
@@ -160,7 +164,9 @@ def assess(
         result.warnings.append(f"Se descartaron {history.discarded_rows} filas inválidas.")
     if metrics.average_volume is None:
         result.confidence = "MEDIUM"
-        result.warnings.append("Volumen no disponible; no se confirma la señal con volumen.")
+        result.warnings.append(
+            "Volumen incompleto: promedio de toda la muestra no disponible; la confirmación local requiere 21 barras con volumen conocido."
+        )
     if included:
         result.warnings.append("Última barra provisional; sus indicadores pueden cambiar.")
 
@@ -201,6 +207,7 @@ def assess(
     comparison("macd_signal", value("macd"), value("macd_signal"), "MACD / señal")
     comparison("macd_zero", value("macd"), 0, "MACD / cero")
     histogram = value("macd_histogram")
+    previous_histogram = value("previous_macd_histogram")
     comparison("macd_histogram", histogram, 0, "Histograma MACD / cero")
     if histogram is not None:
         result.signals["macd_histogram"].explanation += (
@@ -222,7 +229,14 @@ def assess(
     territory = result.signals["macd_zero"].signal
     result.momentum_state = result.momentum
     if territory == "BEARISH" and relative == "BULLISH":
-        result.momentum_state = "IMPROVING_BUT_BEARISH"
+        if (
+            histogram is not None
+            and previous_histogram is not None
+            and histogram < previous_histogram
+        ):
+            result.momentum_state = "RECOVERY_FADING_BUT_BEARISH"
+        else:
+            result.momentum_state = "IMPROVING_BUT_BEARISH"
     elif territory == "BULLISH" and relative == "BEARISH":
         result.momentum_state = "WEAKENING_BUT_BULLISH"
     result.conclusion = result.trend
@@ -281,21 +295,30 @@ def assess(
         direction = "NEUTRAL"
         if latest_volume > baseline_volume > 0:
             direction = (
-                "BULLISH" if window[-1].close > window[-2].close
-                else "BEARISH" if window[-1].close < window[-2].close else "NEUTRAL"
+                "BULLISH"
+                if window[-1].close > window[-2].close
+                else "BEARISH"
+                if window[-1].close < window[-2].close
+                else "NEUTRAL"
             )
         result.signals["volume"] = TechnicalSignal(
             signal=direction,
-            explanation=(f"Volumen último {latest_volume:.2f} frente al promedio de las 20 barras previas "
+            explanation=(
+                f"Volumen último {latest_volume:.2f} frente al promedio de las 20 barras previas "
                 f"{baseline_volume:.2f}: "
-                + (f"acompaña el movimiento {LABELS[direction]} del último precio. "
-                   if direction != "NEUTRAL" else "sin confirmación direccional. ")
+                + (
+                    f"acompaña el movimiento {LABELS[direction]} del último precio. "
+                    if direction != "NEUTRAL"
+                    else "sin confirmación direccional. "
+                )
                 + "No certifica cierre de rueda ni anticipa precios."
             ),
         )
     elif included or len(window) < 21:
-        result.signals["volume"] = TechnicalSignal(signal="UNAVAILABLE",
-            explanation="Confirmación por volumen no evaluable: barra provisional o menos de 21 observaciones.")
+        result.signals["volume"] = TechnicalSignal(
+            signal="UNAVAILABLE",
+            explanation="Confirmación por volumen no evaluable: barra provisional o menos de 21 observaciones.",
+        )
     if result.conclusion == "UNAVAILABLE":
         result.status, result.confidence = "INSUFFICIENT_DATA", "UNAVAILABLE"
     return result
@@ -309,6 +332,11 @@ def narrative(assessment: TechnicalAssessment, sample_size: int) -> tuple[str, s
     )
     momentum_text = {
         "IMPROVING_BUT_BEARISH": "El MACD continúa bajo cero, aunque está por encima de su señal: mejora relativa de corto plazo todavía en terreno bajista, sin confirmar reversión",
+        "RECOVERY_FADING_BUT_BEARISH": (
+            "El MACD continúa bajo cero y por encima de su señal, "
+            "pero el histograma se contrae: la recuperación relativa "
+            "pierde fuerza, sin confirmar todavía un cruce bajista"
+        ),
         "WEAKENING_BUT_BULLISH": "El MACD continúa sobre cero, aunque está por debajo de su señal: pérdida de impulso de corto plazo todavía en terreno alcista, sin confirmar reversión",
         "BEARISH": "Momentum bajista sustentado por: " + available_momentum,
         "BULLISH": "Momentum alcista sustentado por: " + available_momentum,

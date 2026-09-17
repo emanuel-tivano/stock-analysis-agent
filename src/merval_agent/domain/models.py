@@ -137,6 +137,7 @@ class MarketHistory(Model):
 class TechnicalMetrics(Model):
     current_price: float | None = Field(default=None, gt=0)
     macd_histogram: float | None = None
+    previous_macd_histogram: float | None = None
     sma20: float | None = None
     sma50: float | None = None
     ema12: float | None = None
@@ -194,6 +195,7 @@ class TechnicalAssessment(Model):
         "UNAVAILABLE",
         "IMPROVING_BUT_BEARISH",
         "WEAKENING_BUT_BULLISH",
+        "RECOVERY_FADING_BUT_BEARISH",
     ] = "UNAVAILABLE"
     confirmation: Literal["ALIGNED", "UNCONFIRMED", "UNAVAILABLE"] = "UNAVAILABLE"
     completion_reasons: list[str] = Field(default_factory=list)

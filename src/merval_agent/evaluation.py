@@ -71,7 +71,7 @@ def fixture_transport(case):
                     "symbol": request.url.path.split("/")[-2],
                     "market": "bCBA",
                     "range": request.url.params["range"],
-                    "fetchedAt": f"{date.today()}T12:00:00Z",
+                    "fetchedAt": datetime.now(UTC).isoformat(),
                     "meta": {"source": "live", "stale": False},
                     "data": bars,
                 },

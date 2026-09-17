@@ -62,6 +62,36 @@ def test_bearish_trend_with_relative_recovery_not_global_mixed():
     assert a.signals["period_change"].signal == "BULLISH"  # Context is not a reversal vote.
 
 
+def test_bearish_recovery_is_improving_when_histogram_expands():
+    h, m = sample()
+
+    m = m.model_copy(
+        update={
+            "previous_macd_histogram": 0.5,
+            "macd_histogram": 1.0,
+        }
+    )
+
+    assessment = assess(h, m, AT)
+
+    assert assessment.momentum_state == "IMPROVING_BUT_BEARISH"
+
+
+def test_bearish_recovery_is_fading_when_histogram_contracts():
+    h, m = sample()
+
+    m = m.model_copy(
+        update={
+            "previous_macd_histogram": 2.0,
+            "macd_histogram": 1.0,
+        }
+    )
+
+    assessment = assess(h, m, AT)
+
+    assert assessment.momentum_state == "RECOVERY_FADING_BUT_BEARISH"
+
+
 def test_bearish_trend_and_momentum():
     h, m = sample()
     m.macd_signal, m.macd_histogram = -1, -1

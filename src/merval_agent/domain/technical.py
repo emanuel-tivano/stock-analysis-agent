@@ -55,9 +55,15 @@ def calculate(bars: list[Bar]) -> TechnicalMetrics:
         return TechnicalMetrics()
     values = [b.close for b in bars]
     line, signal = macd(values)
+    previous_line, previous_signal = macd(values[:-1])
     return TechnicalMetrics(
         current_price=values[-1],
         macd_histogram=line - signal if line is not None and signal is not None else None,
+        previous_macd_histogram=(
+            previous_line - previous_signal
+            if previous_line is not None and previous_signal is not None
+            else None
+        ),
         sma20=sma(values, 20),
         sma50=sma(values, 50),
         ema12=ema(values, 12),

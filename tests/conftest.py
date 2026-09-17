@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import httpx
 import pytest
@@ -42,7 +42,7 @@ def payload(bars):
         "symbol": "GGAL",
         "market": "bCBA",
         "range": "6M",
-        "fetchedAt": f"{date.today()}T12:00:00Z",
+        "fetchedAt": datetime.now(UTC).isoformat(),
         "meta": {"source": "live", "stale": False},
         "data": [{**b.model_dump(mode="json"), "currency": "peso_Argentino"} for b in bars],
     }

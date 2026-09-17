@@ -1,7 +1,6 @@
 import re
 
-from merval_agent.agents.intent import explicit_full_request
-
+from merval_agent.agents.intent import explicit_analysis_type, explicit_full_request
 from merval_agent.domain.models import (
     AgentState,
     DataQuality,
@@ -18,7 +17,11 @@ def build_report(
     state: AgentState, summary: str, interpretation: str, stale_after_days: int
 ) -> FinalAnalysis:
     history, metrics = state.technical_data, state.technical_metrics
-    kind = state.intent.analysis_type
+    unsupported_full = (
+        explicit_full_request(state.user_request)
+        and explicit_analysis_type(state.user_request) != "technical"
+    )
+    kind = "full" if unsupported_full else state.intent.analysis_type
     asset = state.resolved_asset
     historical_bars = (
         history.bars[:-1]
@@ -153,9 +156,11 @@ def build_report(
     ):
         state.status = "ABSTAIN"
         summary = "No hay evidencia suficiente para completar el análisis solicitado; se adjuntan los datos disponibles."
-    if state.status == "ANSWER" and kind == "full" and explicit_full_request(state.user_request):
+    if state.status == "ANSWER" and unsupported_full:
         state.status = "ABSTAIN"
         summary = "No se puede completar el análisis integral: faltan métricas fundamentales verificadas. Se conserva la evidencia técnica disponible."
+        fundamental.status = "INSUFFICIENT_DATA"
+        missing.append("Métricas fundamentales extraídas y verificadas")
     # Technical failures are not evidence insufficiency. A later successful result
     # for the same capability (including an alternative document lookup) recovers it.
     capabilities = {}
@@ -207,6 +212,7 @@ def build_report(
         )
         assessment.confidence = "UNAVAILABLE"
         technical.status = assessment.status
+        assessment.conclusion = "UNAVAILABLE"
         technical.limitations.append("La fuente de precios falló; no es insuficiencia estadística.")
         technical.interpretation = (
             "La fuente de precios falló; no hay una nueva lectura técnica validada."

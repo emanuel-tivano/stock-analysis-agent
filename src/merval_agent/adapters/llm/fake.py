@@ -27,8 +27,11 @@ class FakeLLMProvider:
         )
         if not state.observations:
             if explicit_full_request(text) and kind == "full":
-                return AgentDecision(action="ABSTAIN", confidence=1,
-                    reason="El análisis integral requiere métricas fundamentales aún no implementadas; solicitá un análisis técnico.")
+                return AgentDecision(
+                    action="ABSTAIN",
+                    confidence=1,
+                    reason="El análisis integral requiere métricas fundamentales aún no implementadas; solicitá un análisis técnico.",
+                )
             relevant = (
                 bool(re.fullmatch(r"[A-Z]{2,5}", state.user_request.strip()))
                 or technical

@@ -1,5 +1,8 @@
+from datetime import date, timedelta
+
 import pytest
 
+from merval_agent.domain.models import Bar
 from merval_agent.domain.technical import calculate, ema, macd, rsi, sma
 
 
@@ -102,3 +105,28 @@ def test_volume_is_required(bars):
     del data["volume"]
     with pytest.raises(ValidationError):
         Bar.model_validate(data)
+
+
+def test_calculate_exposes_previous_macd_histogram():
+    bars = []
+
+    for index in range(60):
+        close = 100.0 + index + (5.0 if index % 7 == 0 else 0.0)
+
+        bars.append(
+            Bar(
+                date=date(2026, 1, 1) + timedelta(days=index),
+                open=close,
+                high=close + 1.0,
+                low=close - 1.0,
+                close=close,
+                volume=1_000,
+            )
+        )
+
+    current = calculate(bars)
+    previous = calculate(bars[:-1])
+
+    assert current.previous_macd_histogram is not None
+    assert previous.macd_histogram is not None
+    assert current.previous_macd_histogram == pytest.approx(previous.macd_histogram)
