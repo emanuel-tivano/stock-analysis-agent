@@ -60,7 +60,7 @@ def test_final_answer_requires_resolved_asset(make_agent):
         max_steps=2,
     )
     result = agent.run("GGAL")
-    assert result.status == "ABSTAIN"
+    assert result.status == "ERROR"
     state = repo.records[0][0]
     assert state.iteration_count == 2
     assert all(o.error.code == "INVALID_DECISION" for o in state.observations)

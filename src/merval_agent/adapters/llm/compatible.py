@@ -1,58 +1,38 @@
-"""Opt-in chat-completions HTTP adapter. No vendor SDK enters the core."""
+"""OpenAI-compatible transport; shared validation remains vendor independent."""
 
-import json
-from importlib.resources import files
+from merval_agent.domain.models import AgentDecision
 
-import httpx
-
-from merval_agent.domain.errors import ExternalServiceError
-from merval_agent.domain.models import AgentDecision, AgentState
+from .http_provider import HTTPDecisionProvider
 
 
-class CompatibleLLMProvider:
-    def __init__(self, http: httpx.Client, base_url: str, model: str, api_key: str):
-        if not base_url or not model or not api_key:
-            raise ValueError("Configure LLM_BASE_URL, LLM_MODEL and LLM_API_KEY")
-        self.http, self.base_url, self.model, self.api_key = (
-            http,
-            base_url.rstrip("/"),
-            model,
-            api_key,
-        )
-        folder = files("merval_agent").joinpath("skills/merval_equity_analysis")
-        self.instructions = "\n".join(
-            folder.joinpath(p).read_text(encoding="utf-8")
-            for p in ("SKILL.md", "references/contracts.md", "references/tools.md")
-        )
-
-    def decide(self, state: AgentState, tools: list[dict]) -> AgentDecision:
-        system = (
-            self.instructions
-            + "\nReturn one JSON AgentDecision. Schema:\n"
-            + json.dumps(AgentDecision.model_json_schema())
-        )
-        try:
-            response = self.http.post(
-                f"{self.base_url}/chat/completions",
-                headers={"Authorization": f"Bearer {self.api_key}"},
-                json={
-                    "model": self.model,
-                    "response_format": {"type": "json_object"},
-                    "messages": [
-                        {"role": "system", "content": system},
-                        {
-                            "role": "user",
-                            "content": json.dumps(
-                                {"state": state.model_dump(mode="json"), "tools": tools},
-                                ensure_ascii=False,
-                            ),
-                        },
-                    ],
+class CompatibleLLMProvider(HTTPDecisionProvider):
+    def request(self, messages):
+        body = {"model": self.model, "messages": messages, "temperature": 0}
+        if self.response_format == "json_object":
+            body["response_format"] = {"type": "json_object"}
+        elif self.response_format == "json_schema":
+            body["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "AgentDecision",
+                    "schema": AgentDecision.model_json_schema(),
                 },
-            )
-            response.raise_for_status()
-            return AgentDecision.model_validate_json(
-                response.json()["choices"][0]["message"]["content"]
-            )
-        except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as exc:
-            raise ExternalServiceError("LLM unavailable or invalid decision") from exc
+            }
+        return self.http.post(
+            f"{self.base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            json=body,
+            timeout=self.timeout,
+        )
+
+    def normalize(self, payload, metadata):
+        raw_usage = payload.get("usage")
+        if isinstance(raw_usage, dict):
+            metadata["usage"] = {
+                k: v
+                for k, v in raw_usage.items()
+                if k in ("prompt_tokens", "completion_tokens", "total_tokens")
+                and type(v) is int
+                and v >= 0
+            }
+        return payload["choices"][0]["message"]["content"]

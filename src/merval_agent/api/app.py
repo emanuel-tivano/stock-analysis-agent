@@ -29,6 +29,13 @@ def create_app(agent=None, settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="Merval Equity Analyst AI", lifespan=lifespan)
 
+    @app.middleware("http")
+    async def json_charset(request, call_next):
+        response = await call_next(request)
+        if response.headers.get("content-type", "").split(";")[0] == "application/json":
+            response.headers["content-type"] = "application/json; charset=utf-8"
+        return response
+
     @app.get("/health")
     def health(request: Request):
         return {"status": "ok", "phase": 1, "llm_provider": request.app.state.provider}

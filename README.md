@@ -1,4 +1,14 @@
-# Merval Equity Analyst AI — Phase 1 Release Candidate
+# Merval Equity Analyst AI
+
+Estado actual: [análisis técnico v4, resiliencia y pruebas reales](docs/technical-v4.md).
+Antecedente: [análisis técnico v3 y verificación](docs/technical-v3.md).
+Antecedente: [auditoría integral del 16/09/2026](docs/audit-2026-09-16.md).
+La quote se incorpora como provisional, el volumen ausente no se reemplaza por cero
+y un fallo técnico no recuperado termina ERROR.
+
+Historia de Fase 2, diagnóstico de fallos, política de decisiones/retries y evidencia de
+evaluación real: [auditoría de cierre](docs/phase2-closure.md). Los apartados históricos
+de Fase 1 se conservan como contexto; el dictamen de cierre está en esa auditoría.
 
 Base Python para el Trabajo Final Integrador de la Certificación Profesional en AI Agent
 Developer del ITBA. Asistente educativo de investigación de acciones argentinas.
@@ -13,14 +23,14 @@ proveedor, cache ni lógica bursátil. No emite recomendaciones BUY/SELL.
 - SMA20/50, EMA12/26, RSI14 Wilder, MACD/señal, variación, extremos y volumen promedio,
   calculados exclusivamente en Python.
 - FastAPI, SQLite, eventos recuperables por `trace_id`, tests offline y siete evals fake.
-- Provider fake determinístico y adapter HTTP compatible configurable, probado con transporte
-  simulado. **No se ha validado una sesión con un LLM real.**
+- Providers Fake, OpenAI-compatible (incluido servidor local) y Gemini nativo; pruebas
+  determinísticas y evaluaciones reales Gemini documentadas en la auditoría de Fase 2.
 
 El loop no contiene una secuencia fija de herramientas: solicita una decisión al provider,
 valida, ejecuta o termina y vuelve a decidir con las observaciones. Los tests demuestran que
 el provider puede elegir metodología antes del mercado y cambiar decisiones tras errores.
 El **FakeLLMProvider es un simulador con reglas**, útil para pruebas, no un LLM ni evidencia
-de razonamiento autónomo real. Validar un modelo real será un hito de la Fase 2.
+de razonamiento autónomo real. La evidencia del modelo real se registra por separado.
 
 ## Arquitectura y trazabilidad
 
@@ -34,7 +44,8 @@ FastAPI → EquityAgent ↔ LLMProvider
 
 - **DATO:** OHLCV, métricas derivadas o metadata de documentos, con fecha y fuente.
 - **METODOLOGÍA:** evidencia separada; las notas locales están marcadas `DEMO`.
-- **INTERPRETACIÓN:** texto del provider, separado de las cifras determinísticas.
+- **SEÑALES:** relaciones, tendencia y momentum calculados por Python antes de la siguiente decisión LLM.
+- **INTERPRETACIÓN:** narrativa determinista de esas señales; no se publica prosa financiera libre del provider.
 - **LIMITACIONES:** muestra insuficiente, antigüedad, fuente demo/desconocida y abstenciones.
 
 Ver [arquitectura](docs/architecture.md) y
@@ -80,12 +91,11 @@ Los tests utilizan `MockTransport` y no necesitan internet.
 
 `POST /agent/run` devuelve un contrato uniforme con `status` ANSWER, CLARIFY, ABSTAIN o ERROR,
 `trace_id`, `session_id`, métricas, evidencia y limitaciones. Una respuesta ANSWER puede ser
-parcial: datos técnicos disponibles y abstención fundamental. En Fase 1 no se asignan
-categorías direccionales; `INSUFFICIENT_DATA` significa que no hay una conclusión validada,
-aunque existan cálculos. Las solicitudes explícitas según Murphy/Graham se abstienen mientras
-el retrieval sea demo. Las solicitudes genéricas pueden devolver cálculos educativos parciales.
-En particular, `status=ANSWER` con `technical.status=INSUFFICIENT_DATA` es intencional:
-hay datos y cálculos, pero falta una conclusión metodológica validada.
+parcial: datos técnicos disponibles y abstención fundamental. `technical.status` expresa la
+lectura BULLISH/BEARISH/NEUTRAL/MIXED cuando hay datos utilizables. `technical.assessment.status`
+separa COMPLETE, PARTIAL, INSUFFICIENT_DATA, SOURCE_ERROR, STALE, INVALID_DATA y UNVERIFIED.
+Un pedido técnico ordinario no requiere libros. Las solicitudes explícitas según Murphy/Graham
+se abstienen de atribuirles conclusiones mientras el retrieval sea demo.
 `fundamental.status=NOT_REQUESTED` indica que esa dimensión no se pidió.
 
 ### Inspeccionar una ejecución local
@@ -105,13 +115,15 @@ no se garantiza recuperación desde una base que no pudo escribirse.
 
 ### UTF-8 en Windows PowerShell
 
-Los archivos y los bytes JSON de la API son UTF-8. La respuesta usa `application/json`;
-no necesita un `charset` adicional para JSON. Las pruebas verifican los acentos y `/docs`.
+Los archivos y los bytes JSON de la API son UTF-8. La respuesta declara
+`application/json; charset=utf-8`. Las pruebas verifican acentos, SQLite y `/docs`.
 En Windows PowerShell, usar lectura explícita `Get-Content -Encoding UTF8` y configurar:
 
 ```powershell
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
+$env:PYTHONUTF8 = '1'
+$env:AGENT_PROMPT_VERSION = 'technical-v3'
 ```
 
 `$OutputEncoding` también controla el texto enviado a programas por pipe. Si un cliente antiguo
@@ -120,7 +132,7 @@ explícitamente como UTF-8. No recodificar el contenido correcto del servidor.
 
 ## Configuración
 
-Todas las variables están en `.env.example`:
+Defaults seguros y variables disponibles en `.env.example` (restaurado en la auditoría):
 
 | Variable | Uso |
 |---|---|
@@ -130,9 +142,23 @@ Todas las variables están en `.env.example`:
 | HTTP_TIMEOUT_SECONDS | Timeout HTTP; default 20 |
 | STALE_AFTER_DAYS | Antigüedad máxima en días calendario; default 7 |
 | DATABASE_PATH | SQLite local, excluido de Git |
-| LLM_PROVIDER | `fake` o `compatible` |
+| LLM_PROVIDER | `fake`, `compatible` o `gemini` |
+| MARKET_QUOTE_ENRICHMENT | Enriquecimiento provisional best-effort; default true |
 | LLM_BASE_URL | Base que incluye el prefijo de API, por ejemplo `/v1` |
 | LLM_MODEL / LLM_API_KEY | Modelo y secreto del proveedor elegido |
+| AGENT_PROMPT_VERSION | `technical-v3`; v1/v2 se conservan para reproducir comparaciones históricas |
+| MARKET_QUOTE_POLICY | `include_provisional_ohlc` (default) o `history_only`; siempre expone procedencia |
+| LLM_DETERMINISTIC_FALLBACK | Default true; conserva un análisis técnico ya calculado ante indisponibilidad del LLM |
+| LLM_MAX_RETRY_WAIT_SECONDS | Default 30; si Retry-After excede el presupuesto, no reintenta antes de tiempo |
+| LLM_FALLBACK_ENABLED | Default false; habilita un único modelo alternativo explícito |
+| LLM_FALLBACK_MODEL / LLM_ALLOWED_FALLBACK_MODELS | Modelo alternativo y lista JSON permitida; sin defaults de nombres |
+
+`technical.assessment.momentum_state` distingue mejora relativa con MACD todavía negativo
+de una dirección alcista. La tendencia tiene precedencia para la conclusión global;
+`MIXED` requiere conflictos enumerados. `assessment.basis` documenta qué serie alimentó
+todos los indicadores; `history_only_metrics` permite comparar la lectura sin quote.
+`generation` identifica proveedor, modelo, intentos, errores y degradación determinista.
+El fallo del LLM sigue en errors/traza aunque se entregue ANSWER con datos ya calculados.
 
 El adapter `compatible` utiliza `/chat/completions`, JSON mode y validación Pydantic. Se eligió
 HTTP encapsulado sin SDK para preparar la integración; comprobar soporte del endpoint y JSON
@@ -146,8 +172,10 @@ mode en el proveedor seleccionado antes de usarlo. No se agregan claves al códi
 Rangos: `1W`, `1M`, `3M`, `6M`, `1Y`. El contrato observado contiene `ok`, `data`, `symbol`,
 `market`, `range`, `fetchedAt`, `meta.source` y `meta.stale`. Se validan OHLCV, fechas únicas,
 instrumento, moneda y rango. Se conserva `live/demo/unknown`; solo datos live recientes pueden
-habilitar una respuesta técnica. `get_quote` queda explícitamente no implementado hasta
-verificar su contrato. No hay integración bursátil directa en este proyecto.
+habilitar una respuesta técnica. `get_history` intenta una quote adicional best-effort cuando el histórico es elegible.
+La barra añadida conserva procedencia y marca provisional; no acredita cierre de rueda.
+`MARKET_QUOTE_ENRICHMENT=false` desactiva esa consulta. Volumen desconocido implica
+`average_volume=null`; no se sustituye por monto negociado. No hay integración bursátil directa en este proyecto.
 Sin horizonte especificado, el fake usa `DEFAULT_TECHNICAL_RANGE` de `domain/policy.py`:
 **6M**, para disponer de muestra para SMA50 y análisis intermedio. No garantiza 50 ruedas
 ni implementa inferencia sofisticada de horizonte. Los providers inyectados pueden elegir
@@ -207,10 +235,58 @@ SQLite conserva cada ejecución, pedido, estado final, trace de tools sanitizado
 no reconstruye conversaciones ni reanuda CLARIFY automáticamente. `session_id` agrupa ejecuciones.
 El usuario envía una nueva solicitud completa tras aclarar.
 También conserva los eventos de decisión y transición. `.gitignore` cubre `.env`, bases,
-PDFs, datos privados, caches y logs. Esta copia de trabajo no incluye `.git`: se auditó
-el contenido disponible, pero no se puede certificar el índice ni el historial de Git.
+PDFs, datos privados, caches y logs. El árbol actual incluye `.git` y cambios previos sin commit; la auditoría integral
+distingue el estado inicial de sus propias correcciones.
 
 Fase 2: validar provider real y selección de tools, RAG privado con citas verificables,
 extracción acotada de balances y revisión humana, ratios por sector, evaluación de conclusiones,
 mejoras de sesiones y futura propuesta HITL. Los contratos `PendingAction` contemplan
 PAUSED → APPROVE/MODIFY/REJECT; no existe tool con efectos externos ejecutables.
+
+## Registro histórico — Fase 2A: validación de LLM real preparada
+
+Se reutiliza el adapter HTTP compatible, con contexto acotado, prompt `phase2a-v1`,
+validación Pydantic y de negocio antes de ejecutar tools, retries limitados y tracing de
+intentos/usage. Fake y golden traces de Fase 1 permanecen sin cambios.
+
+**El LLM externo todavía no fue validado:** no hay URL/modelo/credenciales configurados.
+El soporte está probado con transporte simulado. Hay 17 casos opt-in y runner con
+repeticiones y comparación Fake/Real; no equivale a una prueba de razonamiento real.
+La prosa de salida del provider real es operacional y determinística; las cifras siguen
+viniendo de Python. RAG continúa DEMO; no hay extracción PDF ni valoración Graham.
+
+```powershell
+python scripts/eval_real_llm.py --fake --runs 3
+# Tras configurar LLM_BASE_URL, LLM_MODEL, LLM_API_KEY:
+$env:RUN_LLM_TESTS = "1"
+python scripts/eval_real_llm.py --runs 3
+python -m pytest tests/integration/test_real_llm.py -q -s
+# Además configurar LLM_PROVIDER=compatible para el milestone con datos externos:
+python scripts/run_real_llm.py
+```
+
+El Fake obtiene 45/51 éxitos en el dataset ampliado: sus fallos son fuera de alcance y
+contradicción. Los 7 casos originales siguen aprobados. Los reportes y traces de evals
+se guardan localmente en `evals/results/`, ignorados por Git.
+
+Configuración adicional: LLM_TIMEOUT_SECONDS=20, LLM_MAX_RETRIES=1 (0–2),
+LLM_RESPONSE_FORMAT=json_object (opciones json_schema/none), AGENT_PROMPT_VERSION=phase2a-v1.
+Precios opcionales LLM_INPUT_PRICE_PER_1M / LLM_OUTPUT_PRICE_PER_1M; costo null si faltan
+precios o usage completo. Ver [guía exacta de Fase 2A](docs/phase2a-real-llm.md) para métricas,
+privacidad, comandos de traces, límites y qué falta validar.
+
+## Registro histórico — primera validación de Gemini nativo
+
+LLM_PROVIDER admite `fake`, `compatible` y `gemini`. Gemini utiliza generateContent nativo,
+systemInstruction y el mismo AgentDecision/prompt phase2a-v1. El mecanismo de validación
+/retries es compartido entre adapters; EquityAgent y las tools no cambiaron en esta iteración.
+
+**Evidencia real nueva:** decisión mínima CLARIFY PASS con gemini-3.6-flash. El primer agente
+resolvió GGAL y obtuvo historial live 6M; terminó ERROR en el step 3 por 503/429 del endpoint
+nativo. El recorrido completo todavía no está validado. Trace:
+`b1473d6a-a900-4825-be90-3ffae4ddc34f`. No se ejecutó el dataset real completo tras el 429.
+
+Ver [Gemini nativo](docs/gemini-native.md) para configuración, requests/respuestas, usage,
+errores, resultados reales y archivos modificados. Verificación final: **130 PASS, 4 SKIP**,
+7 evals originales PASS, Ruff/format/smoke API/pip check PASS. Las referencias anteriores a
+“no ejecutado” corresponden al estado previo a esta actualización.

@@ -20,3 +20,7 @@ logs/
 !.env.example
 *.pdf
 .venv*/
+
+# Local evaluation artifacts may contain model identifiers and external data.
+evals/results/*
+!evals/results/.gitkeep

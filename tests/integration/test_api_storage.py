@@ -33,7 +33,9 @@ def test_api_lifespan_health_and_run(make_agent, tmp_path):
 
 def test_default_composition_starts_without_network(tmp_path):
     with TestClient(
-        create_app(settings=Settings(database_path=str(tmp_path / "db.sqlite3")))
+        create_app(
+            settings=Settings(llm_provider="fake", database_path=str(tmp_path / "db.sqlite3"))
+        )
     ) as client:
         assert client.get("/health").status_code == 200
         assert client.post("/agent/run", json={"message": "XXXX"}).json()["status"] == "CLARIFY"
@@ -49,7 +51,7 @@ def test_api_terminal_contracts(make_agent):
     cases = [
         (None, 200, "technical GGAL", "ANSWER"),
         (None, 200, "XXXX", "CLARIFY"),
-        (None, 503, "technical GGAL", "ABSTAIN"),
+        (None, 503, "technical GGAL", "ERROR"),
         (FakeLLMProvider(failure), 200, "GGAL", "ERROR"),
     ]
     for provider, code, message, expected in cases:

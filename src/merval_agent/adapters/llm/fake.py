@@ -1,6 +1,8 @@
+import re
 from collections.abc import Callable
 
 from merval_agent.adapters.bolsar_parser import folded
+from merval_agent.agents.intent import explicit_analysis_type, explicit_full_request
 from merval_agent.domain.models import AgentDecision, AgentState, UserIntent
 from merval_agent.domain.policy import DEFAULT_TECHNICAL_RANGE
 
@@ -15,12 +17,34 @@ class FakeLLMProvider:
         if self.script:
             return self.script(state)
         text = folded(state.user_request)
-        technical = any(w in text for w in ("tecnic", "tendencia", "murphy"))
+        technical = explicit_analysis_type(text) == "technical" or any(
+            w in text for w in ("tecnic", "technic", "tendencia", "murphy")
+        )
         fundamental = any(w in text for w in ("fundament", "graham", "solida"))
         kind = "full" if technical == fundamental else "technical" if technical else "fundamental"
         intent = UserIntent(
             analysis_type=kind, methodology=[s for s in ("murphy", "graham") if s in text]
         )
+        if not state.observations:
+            if explicit_full_request(text) and kind == "full":
+                return AgentDecision(action="ABSTAIN", confidence=1,
+                    reason="El análisis integral requiere métricas fundamentales aún no implementadas; solicitá un análisis técnico.")
+            relevant = (
+                bool(re.fullmatch(r"[A-Z]{2,5}", state.user_request.strip()))
+                or technical
+                or fundamental
+                or any(word in text for word in ("analiz", "analisis", "accion", "byma", "merval"))
+            )
+            if not relevant:
+                return AgentDecision(
+                    action="ABSTAIN", reason="Pedido fuera del análisis de acciones.", confidence=1
+                )
+            if technical and "balance" in text:
+                return AgentDecision(
+                    action="CLARIFY",
+                    reason="Confirmá análisis técnico de precios o análisis de balances.",
+                    confidence=1,
+                )
 
         def call(name, **args):
             return AgentDecision(
@@ -56,7 +80,7 @@ class FakeLLMProvider:
             c.arguments.get("source") for c in state.tool_calls if c.name == "search_methodology"
         }
         for source in (
-            ["murphy"]
+            (["murphy"] if "murphy" in intent.methodology else [])
             if kind == "technical"
             else ["graham"]
             if kind == "fundamental"
@@ -64,7 +88,10 @@ class FakeLLMProvider:
         ):
             if source not in searched:
                 return call("search_methodology", query=state.user_request, source=source)
-        if not state.technical_metrics or state.technical_metrics.sma20 is None:
+        if not state.technical_assessment or state.technical_assessment.status not in (
+            "COMPLETE",
+            "PARTIAL",
+        ):
             return AgentDecision(
                 action="ABSTAIN",
                 reason="No hay evidencia cuantitativa suficiente para responder esta dimensión.",
@@ -73,7 +100,7 @@ class FakeLLMProvider:
             )
         return AgentDecision(
             action="FINAL_ANSWER",
-            reason="Métricas técnicas calculadas disponibles; revisar limitaciones.",
+            reason="Evaluación técnica determinista completada.",
             confidence=1,
-            interpretation="Simulación del provider fake: se presentan cálculos, sin conclusión direccional ni recomendación financiera.",
+            interpretation="",
         )

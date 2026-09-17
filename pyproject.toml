@@ -7,7 +7,7 @@ name = "merval-equity-agent"
 version = "0.1.0"
 description = "Agente educativo de investigación de acciones argentinas"
 requires-python = ">=3.11"
-dependencies = ["pydantic>=2.10,<3", "pydantic-settings>=2.7,<3", "httpx>=0.28,<1", "beautifulsoup4>=4.12,<5", "fastapi>=0.115,<1", "uvicorn>=0.34,<1"]
+dependencies = ["pydantic>=2.10,<3", "pydantic-settings>=2.7,<3", "httpx>=0.28,<1", "beautifulsoup4>=4.12,<5", "fastapi>=0.115,<1", "uvicorn>=0.34,<1", "tzdata>=2026.4"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<10", "ruff>=0.11,<1"]

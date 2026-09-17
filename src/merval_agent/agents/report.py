@@ -1,3 +1,7 @@
+import re
+
+from merval_agent.agents.intent import explicit_full_request
+
 from merval_agent.domain.models import (
     AgentState,
     DataQuality,
@@ -6,6 +10,8 @@ from merval_agent.domain.models import (
     FinalAnalysis,
     now,
 )
+from merval_agent.domain.technical import calculate
+from merval_agent.domain.technical_assessment import assess, narrative
 
 
 def build_report(
@@ -14,32 +20,30 @@ def build_report(
     history, metrics = state.technical_data, state.technical_metrics
     kind = state.intent.analysis_type
     asset = state.resolved_asset
-    stale = bool(
-        history
-        and (
-            history.stale
-            or (
-                history.bars
-                and not 0 <= (now().date() - history.bars[-1].date).days <= stale_after_days
-            )
-        )
+    historical_bars = (
+        history.bars[:-1]
+        if history and history.enrichment_status == "appended"
+        else history.bars
+        if history
+        else []
     )
-    enough = bool(
-        history
-        and history.mode == "live"
-        and not stale
-        and metrics
-        and metrics.sma20 is not None
-        and metrics.rsi14 is not None
-    )
+    assessment = assess(history, metrics, now(), stale_after_days)
+    stale = assessment.freshness == "STALE"
+    enough = assessment.status in ("COMPLETE", "PARTIAL")
     technical = Dimension(status="NOT_REQUESTED" if kind == "fundamental" else "INSUFFICIENT_DATA")
     fundamental = Dimension(status="NOT_REQUESTED" if kind == "technical" else "INSUFFICIENT_DATA")
     missing = list(state.missing_information)
     if kind != "fundamental":
         technical.metrics = metrics
+        if history and history.enrichment_status == "appended":
+            technical.history_only_metrics = calculate(historical_bars)
+        technical.assessment = assessment
+        technical.narrative_origin = "deterministic"
+        technical.status = assessment.conclusion if enough else assessment.status
         technical.limitations = [
             "Precios según variante del proveedor; no se verificaron ajustes corporativos.",
-            "No se asigna categoría direccional en Fase 1; INSUFFICIENT_DATA indica ausencia de conclusión validada.",
+            "Confianza describe calidad de evidencia, no probabilidad de un pronóstico.",
+            *assessment.warnings,
         ]
         if history:
             technical.evidence = [
@@ -52,27 +56,53 @@ def build_report(
                     metadata={
                         "mode": history.mode,
                         "fetched_at": history.fetched_at.isoformat(),
-                        "as_of": str(history.bars[-1].date) if history.bars else None,
+                        "as_of": str(historical_bars[-1].date) if historical_bars else None,
                         "currency": history.currency,
+                        "discarded_rows": history.discarded_rows,
+                        "enrichment_status": history.enrichment_status,
                     },
                 )
             ]
-        if not enough:
-            missing.append("Historial live reciente con al menos 20 ruedas válidas")
-        if metrics:
-            unavailable = [k for k, v in metrics.model_dump().items() if v is None]
-            if unavailable:
-                technical.limitations.append(
-                    "Indicadores sin muestra suficiente: " + ", ".join(unavailable)
+            if history.quote:
+                technical.evidence.append(
+                    Evidence(
+                        source=history.quote.source,
+                        chunk_id=f"{state.trace_id}:quote",
+                        text="Último precio operado y OHLC provisional; no acredita cierre de rueda.",
+                        score=1,
+                        kind="DATA",
+                        metadata=history.quote.model_dump(mode="json"),
+                    )
                 )
-        technical.interpretation = (
-            interpretation
-            if enough
-            else "Abstención: evidencia técnica insuficiente, demo, desconocida o antigua."
-        )
+                technical.limitations.append(
+                    "La última barra es provisional: los indicadores de precios incluyen la quote y pueden cambiar durante la rueda."
+                    if history.enrichment_status == "appended"
+                    else "Cotización provisional separada: no se incorporó a los indicadores; current_price corresponde al último precio histórico utilizado."
+                )
+            if history.discarded_rows:
+                technical.limitations.append(
+                    f"Se descartaron {history.discarded_rows} filas históricas inválidas; muestra parcial."
+                )
+            if history.enrichment_status == "unavailable":
+                technical.limitations.append(
+                    "Quote no disponible o no válida; se conserva únicamente el historial."
+                )
+            if any(b.volume is None for b in history.bars):
+                technical.limitations.append(
+                    "Volumen desconocido en parte de la muestra; average_volume no se calcula."
+                )
+        if not enough:
+            missing.extend(assessment.warnings)
+        technical.limitations.extend(f"{k}: {v}" for k, v in assessment.missing_indicators.items())
+        if enough:
+            technical_summary, technical.interpretation = narrative(assessment, metrics.sample_size)
+            if state.status == "ANSWER":
+                summary = technical_summary
+        else:
+            technical.interpretation = " ".join(assessment.warnings)
     if kind != "technical":
         fundamental.limitations = [
-            "Fase 1 descubre documentos; no extrae ni valida métricas de balances.",
+            "El descubrimiento de documentos no implica extracción ni validación de métricas de balances.",
             "Publicaciones visibles en Bolsar; no garantiza cobertura histórica completa.",
         ]
         if asset and asset.company_type == "FINANCIAL":
@@ -98,19 +128,90 @@ def build_report(
             target.limitations.append(
                 "Metodología demostrativa local: no es recuperación del libro ni evidencia autoritativa."
             )
-    if state.intent.methodology and not any(
+    # The model's choice to consult a methodology is not an explicit user demand
+    # for an authoritative book interpretation. Keep that distinction independent
+    # of whether the model fills the optional intent.methodology field.
+    explicit_methodology = bool(re.search(r"\b(?:murphy|graham)\b", state.user_request, re.I))
+    if (state.intent.methodology or explicit_methodology) and not any(
         e.kind == "METHODOLOGY" for e in state.methodology_evidence
     ):
         missing.append("Fuentes metodológicas privadas indexadas y verificadas")
+    if explicit_methodology and not any(
+        e.kind == "METHODOLOGY" for e in state.methodology_evidence
+    ):
+        technical.limitations.append(
+            "La lectura determinista no valida una interpretación atribuida a Murphy/Graham."
+        )
+        if kind != "fundamental":
+            technical.status = "INSUFFICIENT_DATA"
     if state.status == "ANSWER" and (
         not enough
         or (
-            state.intent.methodology
+            explicit_methodology
             and not any(e.kind == "METHODOLOGY" for e in state.methodology_evidence)
         )
     ):
         state.status = "ABSTAIN"
         summary = "No hay evidencia suficiente para completar el análisis solicitado; se adjuntan los datos disponibles."
+    if state.status == "ANSWER" and kind == "full" and explicit_full_request(state.user_request):
+        state.status = "ABSTAIN"
+        summary = "No se puede completar el análisis integral: faltan métricas fundamentales verificadas. Se conserva la evidencia técnica disponible."
+    # Technical failures are not evidence insufficiency. A later successful result
+    # for the same capability (including an alternative document lookup) recovers it.
+    capabilities = {}
+    calls = iter(state.tool_calls)
+    previous_ticker = None
+    for observation in state.observations:
+        if observation.tool_name == "decision":
+            continue
+        call = next(calls, None)
+        if observation.tool_name == "resolve_asset" and observation.success:
+            ticker = observation.data.get("ticker")
+            if ticker != previous_ticker:
+                capabilities.clear()
+            previous_ticker = ticker
+        capability = (
+            "financial_documents"
+            if observation.tool_name
+            in ("list_financial_documents", "get_latest_financial_statement")
+            else observation.tool_name
+        )
+        if observation.tool_name == "search_methodology" and call:
+            capability += ":" + str(call.arguments.get("source"))
+        capabilities[capability] = observation
+    if state.status in ("ANSWER", "ABSTAIN") and any(
+        not o.success and o.error and o.error.code in ("EXTERNAL_SERVICE", "CALCULATION_FAILED")
+        for o in capabilities.values()
+    ):
+        state.status = "ERROR"
+        summary = "Un fallo técnico no recuperado impidió completar el análisis; se conservan los datos disponibles."
+    market_failure = capabilities.get("get_market_history")
+    calculation_failure = capabilities.get("calculate_technical_indicators")
+    if (
+        kind != "fundamental"
+        and calculation_failure
+        and not calculation_failure.success
+        and calculation_failure.error
+        and calculation_failure.error.code == "CALCULATION_FAILED"
+    ):
+        assessment.status = technical.status = "INVALID_DATA"
+        assessment.confidence = "UNAVAILABLE"
+        assessment.conclusion = "UNAVAILABLE"
+        technical.interpretation = (
+            "Falló el cálculo técnico; los datos de mercado se conservan como evidencia."
+        )
+        technical.limitations.append(technical.interpretation)
+    if kind != "fundamental" and market_failure and not market_failure.success:
+        assessment.status = (
+            "INVALID_DATA" if market_failure.error_kind == "INVALID_RESPONSE" else "SOURCE_ERROR"
+        )
+        assessment.confidence = "UNAVAILABLE"
+        technical.status = assessment.status
+        technical.limitations.append("La fuente de precios falló; no es insuficiencia estadística.")
+        technical.interpretation = (
+            "La fuente de precios falló; no hay una nueva lectura técnica validada."
+        )
+        assessment.warnings = [technical.interpretation]
     evidence = technical.evidence + fundamental.evidence
     return FinalAnalysis(
         status=state.status,

@@ -1,9 +1,11 @@
+import hashlib
 import json
 import logging
+import re
 from typing import get_args
 
 from merval_agent.adapters.llm.base import LLMProvider
-from merval_agent.domain.errors import ExternalServiceError
+from merval_agent.domain.errors import DecisionBudgetExhausted, ExternalServiceError
 from merval_agent.domain.models import (
     AgentDecision,
     AgentState,
@@ -11,13 +13,18 @@ from merval_agent.domain.models import (
     HistoryRange,
     ToolCall,
     ToolResult,
+    now,
 )
+from merval_agent.domain.technical_assessment import assess
 from merval_agent.memory.repository import AnalysisRepository
 from merval_agent.tools.registry import ToolRegistry
 
 from .decisions import validate_decision
+from .generation import describe_generation
+from .intent import explicit_analysis_type
 from .report import build_report
 from .state import reduce_observation
+from .validation_feedback import validation_feedback
 
 logger = logging.getLogger("merval_agent")
 
@@ -32,6 +39,7 @@ def event(name: str, state: AgentState, **fields):
         "state": {
             "ticker": state.resolved_asset.ticker if state.resolved_asset else None,
             "analysis_type": state.intent.analysis_type,
+            "methodology_requested_by_model": state.intent.methodology,
             "observations": len(state.observations),
             "has_history": state.technical_data is not None,
             "has_metrics": state.technical_metrics is not None,
@@ -52,27 +60,71 @@ class EquityAgent:
         repository: AnalysisRepository,
         max_steps: int = 12,
         stale_after_days: int = 7,
+        deterministic_fallback: bool = True,
     ):
         if max_steps < 1:
             raise ValueError("max_steps must be positive")
         self.provider, self.tools, self.repository = provider, tools, repository
         self.max_steps, self.stale_after_days = max_steps, stale_after_days
+        self.deterministic_fallback = deterministic_fallback
 
     def run(self, message: str, session_id: str | None = None):
         state = AgentState(
             user_request=message, **({"session_id": session_id} if session_id else {})
         )
+        analysis_type = explicit_analysis_type(message)
+        if analysis_type is not None:
+            state.intent.analysis_type = analysis_type
         event("AGENT_STARTED", state)
         summary, interpretation = "Se alcanzó MAX_AGENT_STEPS sin evidencia suficiente.", ""
+        consecutive_invalid = 0
+        degraded = False
         while state.status == "RUNNING" and state.iteration_count < self.max_steps:
             state.iteration_count += 1
+            state.technical_assessment = assess(
+                state.technical_data, state.technical_metrics, now(), self.stale_after_days
+            )
             try:
-                raw = self.provider.decide(state.model_copy(deep=True), self.tools.schemas())
+                validated_provider = getattr(self.provider, "decide_validated", None)
+                if validated_provider:
+
+                    def validate_proposal(proposal):
+                        validate_decision(proposal, state)
+                        candidate = state.model_copy(deep=True)
+                        if proposal.intent:
+                            candidate.intent = proposal.intent
+                        if proposal.action == "CALL_TOOL":
+                            call = ToolCall(name=proposal.tool_name, arguments=proposal.tool_args)
+                            self.tools.prepare(call, candidate)
+
+                    raw = validated_provider(
+                        state.model_copy(deep=True),
+                        self.tools.schemas(),
+                        validate_proposal,
+                        lambda name, **fields: event(name, state, **fields),
+                        self.max_steps,
+                    )
+                else:
+                    raw = self.provider.decide(state.model_copy(deep=True), self.tools.schemas())
                 decision = AgentDecision.model_validate(raw)
                 validate_decision(decision, state)
+                candidate = state.model_copy(deep=True)
+                if decision.intent:
+                    candidate.intent = decision.intent
+                if decision.action == "CALL_TOOL":
+                    normalized, op_key, attempt = self.tools.prepare(
+                        ToolCall(name=decision.tool_name, arguments=decision.tool_args), candidate
+                    )
+                consecutive_invalid = 0
                 if decision.intent:
                     state.intent = decision.intent
-                state.missing_information.extend(decision.missing_information)
+                if validated_provider:
+                    if decision.missing_information:
+                        state.missing_information.append(
+                            "El modelo indicó información faltante; revisar evidencia disponible."
+                        )
+                else:
+                    state.missing_information.extend(decision.missing_information)
                 event(
                     "DECISION_MADE",
                     state,
@@ -86,7 +138,7 @@ class EquityAgent:
                 if decision.action == "CALL_TOOL":
                     call = ToolCall(
                         name=decision.tool_name,
-                        arguments=decision.tool_args,
+                        arguments=normalized.model_dump(),
                         step_number=state.iteration_count,
                     )
                     state.tool_calls.append(call)
@@ -109,9 +161,28 @@ class EquityAgent:
                         state,
                         tool_name=call.name if call.name in self.tools.tools else "unknown",
                         arguments=safe_args,
+                        arguments_sha256=hashlib.sha256(
+                            json.dumps(call.arguments, sort_keys=True).encode()
+                        ).hexdigest(),
+                        operation_key=op_key,
                     )
                     result = self.tools.execute(call, state)
-                    reduce_observation(state, result)
+                    try:
+                        reduce_observation(state, result)
+                    except (ValueError, KeyError, TypeError):
+                        # A malformed tool result is a tool failure, not an invalid LLM decision.
+                        result = ToolResult(
+                            tool_name=call.name,
+                            success=False,
+                            error=ErrorInfo(
+                                code="EXTERNAL_SERVICE", message="Invalid tool response"
+                            ),
+                            error_kind="INVALID_RESPONSE",
+                            operation_key=op_key,
+                            attempts=attempt,
+                            latency_ms=result.latency_ms,
+                        )
+                        reduce_observation(state, result)
                     event(
                         "TOOL_SUCCEEDED" if result.success else "TOOL_FAILED",
                         state,
@@ -119,6 +190,51 @@ class EquityAgent:
                         outcome="SUCCEEDED" if result.success else "FAILED",
                         latency_ms=result.latency_ms,
                         error=result.error.code if result.error else None,
+                        operation_key=result.operation_key,
+                        attempts=result.attempts,
+                        max_attempts=result.max_attempts,
+                        error_kind=result.error_kind,
+                        retryable=result.error.retryable if result.error else False,
+                        can_retry=result.can_retry,
+                        retry_budget_exhausted=result.retry_budget_exhausted,
+                        **(
+                            {
+                                "market_data": {
+                                    "as_of": str(state.technical_data.bars[-1].date),
+                                    "history_as_of": str(
+                                        state.technical_data.bars[
+                                            -2
+                                            if state.technical_data.enrichment_status == "appended"
+                                            else -1
+                                        ].date
+                                    ),
+                                    "history_source": state.technical_data.source,
+                                    "quote_source": state.technical_data.quote.source
+                                    if state.technical_data.quote
+                                    else None,
+                                    "quote_in_indicators": state.technical_data.enrichment_status
+                                    == "appended",
+                                    "fetched_at": state.technical_data.fetched_at.isoformat(),
+                                    "enrichment_status": state.technical_data.enrichment_status,
+                                    "discarded_rows": state.technical_data.discarded_rows,
+                                    "provisional": state.technical_data.quote is not None,
+                                    "quote_observed_at": state.technical_data.quote.observed_at.isoformat()
+                                    if state.technical_data.quote
+                                    else None,
+                                    "quote_fetched_at": state.technical_data.quote.fetched_at.isoformat()
+                                    if state.technical_data.quote
+                                    else None,
+                                    "snapshot_sha256": hashlib.sha256(
+                                        state.technical_data.model_dump_json().encode()
+                                    ).hexdigest(),
+                                }
+                            }
+                            if result.success
+                            and call.name == "get_market_history"
+                            and state.technical_data
+                            and state.technical_data.bars
+                            else {}
+                        ),
                     )
                 else:
                     state.status = {
@@ -127,28 +243,73 @@ class EquityAgent:
                         "ABSTAIN": "ABSTAIN",
                     }[decision.action]
                     summary, interpretation = decision.reason, decision.interpretation
+                    if validated_provider:
+                        # The report renders financial prose from Python assessment.
+                        # Model operational text is not verified financial evidence.
+                        summary = {
+                            "FINAL_ANSWER": "Evaluación técnica completada.",
+                            "ABSTAIN": "No hay evidencia suficiente para completar el análisis solicitado.",
+                            "CLARIFY": "Confirmá el ticker, instrumento BYMA y tipo de análisis; aclarar pedidos ambiguos o contradictorios.",
+                        }[decision.action]
+                        interpretation = ""
                 event("STATE_UPDATED", state, transition=f"RUNNING->{state.status}")
-            except ValueError:
+            except ValueError as exc:
+                consecutive_invalid += 1
+                feedback = validation_feedback(exc, "agent_validation")
                 error = ErrorInfo(
                     code="INVALID_DECISION", message="Decision failed schema or business validation"
                 )
                 state.errors.append(error)
                 state.observations.append(
-                    ToolResult(tool_name="decision", success=False, error=error)
+                    ToolResult(tool_name="decision", success=False, error=error, data=feedback)
                 )
-                event("DECISION_MADE", state, outcome="INVALID", error=error.code)
-                event("STATE_UPDATED", state, error=error.code, transition="RUNNING->RUNNING")
-            except ExternalServiceError:
+                event(
+                    "DECISION_MADE",
+                    state,
+                    outcome="INVALID",
+                    error=error.code,
+                    validation_feedback=feedback,
+                )
+                if consecutive_invalid >= 2 or state.iteration_count == self.max_steps:
+                    state.status = "ERROR"
+                    summary = "No fue posible obtener una decisión válida dentro del presupuesto."
+                event(
+                    "STATE_UPDATED", state, error=error.code, transition=f"RUNNING->{state.status}"
+                )
+            except ExternalServiceError as exc:
                 state.status = "ERROR"
+                failure_code = (
+                    "DECISION_BUDGET_EXHAUSTED"
+                    if isinstance(exc, DecisionBudgetExhausted)
+                    else "LLM_FAILURE"
+                )
                 state.errors.append(
                     ErrorInfo(
-                        code="LLM_FAILURE",
+                        code=failure_code,
                         message="Provider unavailable or malformed output",
-                        retryable=True,
+                        retryable=failure_code == "LLM_FAILURE" and exc.retryable,
                     )
                 )
                 summary = "No fue posible obtener una decisión válida del provider."
-                event("STATE_UPDATED", state, error="LLM_FAILURE", transition="RUNNING->ERROR")
+                if (
+                    self.deterministic_fallback
+                    and not isinstance(exc, DecisionBudgetExhausted)
+                    and exc.classification in ("RATE_LIMITED", "QUOTA_EXHAUSTED", "UNAVAILABLE")
+                    and state.intent.analysis_type == "technical"
+                    and not re.search(r"\b(murphy|graham)\b", state.user_request, re.I)
+                    and state.resolved_asset
+                    and state.resolved_asset.ticker
+                    and state.technical_assessment
+                    and state.technical_assessment.status in ("COMPLETE", "PARTIAL")
+                ):
+                    state.status = "ANSWER"
+                    degraded = True
+                event(
+                    "STATE_UPDATED",
+                    state,
+                    error=failure_code,
+                    transition=f"RUNNING->{state.status}",
+                )
             except Exception:
                 state.status = "ERROR"
                 state.errors.append(
@@ -158,13 +319,33 @@ class EquityAgent:
                 event("STATE_UPDATED", state, error="INTERNAL_ERROR", transition="RUNNING->ERROR")
         previous_status = state.status
         if state.status == "RUNNING":
-            state.status = "ABSTAIN"
+            state.status = "ERROR"
+            state.errors.append(
+                ErrorInfo(code="MAX_STEPS_EXCEEDED", message="Decision budget exhausted")
+            )
             state.missing_information.append("Límite de pasos alcanzado")
         result = build_report(state, summary, interpretation, self.stale_after_days)
-        event("STATE_UPDATED", state, transition=f"{previous_status}->{state.status}")
+        result.generation = describe_generation(state.trace_events, result.status, degraded)
+        if result.generation.mode == "DETERMINISTIC_FALLBACK":
+            result.technical.limitations.extend(result.generation.warnings)
+        if previous_status != "ERROR" or state.status != "ERROR":
+            event("STATE_UPDATED", state, transition=f"{previous_status}->{state.status}")
         if result.status == "ABSTAIN":
             event("AGENT_ABSTAINED", state)
-        event("AGENT_FINISHED", state)
+        event(
+            "AGENT_FINISHED",
+            state,
+            generation=result.generation.model_dump(mode="json"),
+            final_reason=(
+                state.errors[-1].code
+                if state.status == "ERROR" and state.errors
+                else {
+                    "ANSWER": "AVAILABLE_DATA_WITH_LIMITATIONS",
+                    "CLARIFY": "USER_INFORMATION_REQUIRED",
+                    "ABSTAIN": "INSUFFICIENT_EVIDENCE",
+                }.get(state.status, state.status)
+            ),
+        )
         try:
             self.repository.save(state, result)
         except Exception:
@@ -178,7 +359,11 @@ class EquityAgent:
                 "STATE_UPDATED",
                 state,
                 error="PERSISTENCE_FAILURE",
-                transition=f"{previous_status}->ERROR",
+                **(
+                    {"transition": f"{previous_status}->ERROR"}
+                    if previous_status != "ERROR"
+                    else {}
+                ),
             )
             event("AGENT_FINISHED", state, error="PERSISTENCE_FAILURE")
         return result

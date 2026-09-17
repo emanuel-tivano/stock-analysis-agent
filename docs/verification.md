@@ -178,3 +178,93 @@ Reservado y sin implementar:
 
 LangGraph y multiagente no se agregaron ni se consideran requisitos de Fase 2.
 La baseline no ofrece recomendaciones financieras ni aplicación autoritativa de libros.
+
+## Verificación Fase 2A — 2026-09-15
+
+La sección anterior conserva el registro histórico de Fase 1. Se auditó `b0dfdab` con
+árbol limpio y sin tags locales. Previo a cambios: 87 PASS, 2 live SKIP.
+
+| Comando final | Resultado |
+| --- | --- |
+| `python -m ruff check src tests scripts` | PASS |
+| `python -m ruff format --check src tests scripts` | PASS, 55 archivos |
+| `python -m pytest -q` | 108 PASS, 3 SKIP |
+| `python -m pytest tests/integration/test_evals.py -q -s` | 7 PASS |
+| `python scripts/smoke_api.py` | health 200, run 200 CLARIFY |
+| `python -m pip check` | PASS |
+| `python scripts/eval_real_llm.py --fake --runs 3` | 45/51 éxitos, reporte guardado, exit 1 por casos nuevos fallidos |
+
+Persisten las dos advertencias de deprecación de Starlette observadas en la baseline.
+Los 3 SKIP corresponden a 2 tests live de datos y el nuevo test del LLM real.
+Los 21 tests offline adicionales verifican transporte inválido, retries acotados,
+precondiciones, ramas prohibidas, duplicados vs retry de ERROR, privacidad, contexto acotado,
+prosa no verificada, formatos estructurados, scoring, usage/costo y persistencia por repetición.
+
+### Comparación registrada
+
+| Métrica (17 casos × 3) | Fake | Real |
+| --- | ---: | --- |
+| task_success_rate | 88,24% | No ejecutado |
+| tool_selection_accuracy | 94,12% | No ejecutado |
+| forbidden_tool_violations | 6 | No ejecutado |
+| invalid_decision_rate | 0% | No ejecutado |
+| duplicate_tool_call_rate | 0% | No ejecutado |
+| abstention_correctness | 93,75% | No ejecutado |
+| clarification_correctness | 66,67% | No ejecutado |
+| average_steps | 4,294 | No ejecutado |
+| average_latency (ms) | 15,384 | No ejecutado |
+| max_steps_exceeded / provider_errors | 0 / 0 | No ejecutado |
+| tokens / cost | null / null | No ejecutado |
+
+Fallos Fake: fuera de alcance (CLARIFY en lugar de ABSTAIN) y contradicción (continúa
+análisis técnico sin aclarar). No se alteró Fake para mejorar resultados del dataset ampliado.
+Las siete evals de Fase 1 siguen aprobadas y sus golden traces exactos siguen iguales.
+
+Reporte local: `evals/results/fake_baseline.json`; SQLite: `evals/results/traces.sqlite3`.
+Se verificó `show_trace.py` sobre `94ea1d80-e744-49fa-8152-b22a30d53331` (**Fake**, GGAL,
+ANSWER, 5 steps, resolve_asset → get_market_history 6M → calculate_technical_indicators →
+search_methodology Murphy DEMO → FINAL_ANSWER). Este trace no representa un modelo externo.
+
+**Pruebas reales no ejecutadas**: LLM_BASE_URL, LLM_MODEL y LLM_API_KEY no configurados.
+No existe trace real ni comparación empírica Real; no se ejecutó nuevo milestone con
+Market Tracker externo. Los resultados live históricos arriba no validan el nuevo provider.
+La Definition of Done completa de Fase 2A queda pendiente de esa evidencia.
+
+Guía, decisiones de diseño y propuesta separada de Fase 2B:
+[phase2a-real-llm.md](phase2a-real-llm.md). No se hicieron commit, push, tag, release ni deploy.
+
+### Inventario de cambios Fase 2A
+
+Modificados:
+
+- `.env.example`, `.gitignore`
+- `README.md`, `docs/architecture.md`, `docs/verification.md`, `evals/README.md`
+- `src/merval_agent/adapters/llm/compatible.py`
+- `src/merval_agent/agents/equity_agent.py`
+- `src/merval_agent/bootstrap.py`, `src/merval_agent/config.py`
+
+Agregados:
+
+- `docs/phase2a-real-llm.md`
+- `src/merval_agent/adapters/llm/context.py`, `src/merval_agent/evaluation.py`
+- `scripts/eval_real_llm.py`, `scripts/run_real_llm.py`
+- `evals/real_llm_dataset.jsonl`, `evals/results/.gitkeep`
+- `tests/integration/test_real_llm.py`
+- `tests/unit/test_real_llm_robustness.py`, `tests/unit/test_real_llm_evaluation.py`
+
+Artefactos generados locales ignorados: `evals/results/fake_baseline.json` y
+`evals/results/traces.sqlite3`. No se incluyen como archivos a versionar.
+
+## Actualización Gemini nativo — 2026-09-15
+
+Los registros anteriores describen la evidencia histórica de Fase 2A. Resultado final de
+esta extensión: **130 PASS, 4 SKIP**, Ruff PASS, format PASS (58 archivos), 7 evals originales
+PASS, smoke API PASS y pip check PASS.
+
+Prueba mínima Gemini real: PASS (CLARIFY). Primer agente Gemini:
+`b1473d6a-a900-4825-be90-3ffae4ddc34f`, ERROR por 503/429 después de resolver GGAL y consultar
+historial real 6M. Technical; fundamental NOT_REQUESTED. La validación externa es parcial:
+no se completaron indicadores/metodología/respuesta final, ni dataset real de 17 casos.
+
+Resultados, errores, usage, comandos e inventario:
+[gemini-native.md](gemini-native.md). No se realizaron operaciones Git de publicación.

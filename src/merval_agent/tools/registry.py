@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import Field, ValidationError
 
-from merval_agent.domain.errors import ExternalServiceError
+from merval_agent.domain.errors import DecisionValidationError, ExternalServiceError
 from merval_agent.domain.models import (
     AgentState,
     ErrorInfo,
@@ -19,6 +19,7 @@ from merval_agent.domain.technical import calculate
 from merval_agent.retrieval.local import MethodologyRetriever
 
 from .assets import resolve_asset
+from .operations import MAX_TOOL_ATTEMPTS, check_operation, operation_key, tool_error_type
 
 
 class ResolveArgs(Model):
@@ -60,54 +61,81 @@ class ToolRegistry:
 
     def validate(self, call: ToolCall, state: AgentState) -> Model:
         if call.name not in self.tools:
-            raise ValueError("Unknown tool")
+            raise DecisionValidationError("UNKNOWN_TOOL")
         args = self.tools[call.name].args.model_validate(call.arguments)
         ticker = getattr(args, "ticker", None)
         if ticker and (not state.resolved_asset or state.resolved_asset.ticker != ticker):
-            raise ValueError("Resolve asset before requesting its data")
+            raise DecisionValidationError("UNRESOLVED_ASSET")
         if state.intent.analysis_type == "technical" and call.name in (
             "list_financial_documents",
             "get_latest_financial_statement",
         ):
-            raise ValueError("Fundamental tool outside technical intent")
+            raise DecisionValidationError("TOOL_OUTSIDE_INTENT")
         if state.intent.analysis_type == "fundamental" and call.name in (
             "get_market_history",
             "calculate_technical_indicators",
         ):
-            raise ValueError("Technical tool outside fundamental intent")
+            raise DecisionValidationError("TOOL_OUTSIDE_INTENT")
         if isinstance(args, SearchArgs):
             if (state.intent.analysis_type, args.source) in (
                 ("technical", "graham"),
                 ("fundamental", "murphy"),
             ):
-                raise ValueError("Methodology outside intent")
+                raise DecisionValidationError("METHODOLOGY_OUTSIDE_INTENT")
         if call.name == "calculate_technical_indicators" and state.technical_data is None:
-            raise ValueError("Fetch history first")
+            raise DecisionValidationError("HISTORY_REQUIRED")
         return args
+
+    def prepare(self, call: ToolCall, state: AgentState):
+        args = self.validate(call, state)
+        key = operation_key(call, args.model_dump(), state)
+        return args, key, check_operation(key, state)
 
     def execute(self, call: ToolCall, state: AgentState) -> ToolResult:
         started = perf_counter()
+        key, attempt = None, 0
         try:
-            args = self.validate(call, state)
+            args, key, attempt = self.prepare(call, state)
             data = self.tools[call.name].handler(args, state)
             return ToolResult(
                 tool_name=call.name,
                 success=True,
                 data=data,
+                operation_key=key,
+                attempts=attempt,
+                max_attempts=MAX_TOOL_ATTEMPTS,
                 latency_ms=(perf_counter() - started) * 1000,
             )
-        except (ValueError, ValidationError, ExternalServiceError) as exc:
+        except (ValueError, ValidationError, ArithmeticError, ExternalServiceError) as exc:
             external = isinstance(exc, ExternalServiceError)
+            calculation = (
+                key is not None and call.name == "calculate_technical_indicators" and not external
+            )
+            kind, retryable = tool_error_type(exc) if external else ("INVALID_TOOL_CALL", False)
+            if calculation:
+                kind = "CALCULATION_ERROR"
             return ToolResult(
                 tool_name=call.name,
                 success=False,
                 error=ErrorInfo(
-                    code="EXTERNAL_SERVICE" if external else "INVALID_TOOL_CALL",
+                    code="EXTERNAL_SERVICE"
+                    if external
+                    else "CALCULATION_FAILED"
+                    if calculation
+                    else "INVALID_TOOL_CALL",
                     message="External service failed"
                     if external
+                    else "Technical calculation failed"
+                    if calculation
                     else "Tool arguments or preconditions invalid",
-                    retryable=external,
+                    retryable=retryable,
                 ),
+                operation_key=key,
+                attempts=attempt,
+                max_attempts=MAX_TOOL_ATTEMPTS,
+                error_kind=kind,
+                can_retry=retryable and attempt < MAX_TOOL_ATTEMPTS,
+                retry_budget_exhausted=retryable and attempt >= MAX_TOOL_ATTEMPTS,
                 latency_ms=(perf_counter() - started) * 1000,
             )
 

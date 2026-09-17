@@ -1,0 +1,571 @@
+[
+  {
+    "id": "technical_ggal",
+    "trace_id": "275de3d9-df67-4fbf-a80f-cf05ac3315f9",
+    "decisions": [
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "resolve_asset",
+        "tool_args": {
+          "query": "fixture objective"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "get_market_history",
+        "tool_args": {
+          "range": "6M",
+          "ticker": "GGAL"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "calculate_technical_indicators",
+        "tool_args": {
+          "ticker": "GGAL"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "search_methodology",
+        "tool_args": {
+          "source": "murphy",
+          "query": "fixture objective"
+        }
+      },
+      {
+        "action": "FINAL_ANSWER",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1
+      }
+    ]
+  },
+  {
+    "id": "fundamental_pamp",
+    "trace_id": "3ca3bfd7-1c37-4503-8649-410815d1a5d1",
+    "decisions": [
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "resolve_asset",
+        "tool_args": {
+          "query": "fixture objective"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "list_financial_documents",
+        "tool_args": {
+          "ticker": "PAMP"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "search_methodology",
+        "tool_args": {
+          "source": "graham",
+          "query": "fixture objective"
+        }
+      },
+      {
+        "action": "ABSTAIN",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1
+      }
+    ]
+  },
+  {
+    "id": "ambiguous",
+    "trace_id": "463588be-2307-42dc-945a-8cf188b7a9b4",
+    "decisions": [
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "resolve_asset",
+        "tool_args": {
+          "query": "fixture objective"
+        }
+      },
+      {
+        "action": "CLARIFY",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1
+      }
+    ]
+  },
+  {
+    "id": "technical_alua",
+    "trace_id": "65e8ce2a-5587-4ba0-8ec9-c623f0c8ce19",
+    "decisions": [
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "resolve_asset",
+        "tool_args": {
+          "query": "fixture objective"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "get_market_history",
+        "tool_args": {
+          "ticker": "ALUA",
+          "range": "6M"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "calculate_technical_indicators",
+        "tool_args": {
+          "ticker": "ALUA"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "search_methodology",
+        "tool_args": {
+          "source": "murphy",
+          "query": "fixture objective"
+        }
+      },
+      {
+        "action": "FINAL_ANSWER",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1
+      }
+    ]
+  },
+  {
+    "id": "murphy_demo",
+    "trace_id": "e83e9ac3-a62c-4c60-aad5-e892fa6fd2b0",
+    "decisions": [
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "resolve_asset",
+        "tool_args": {
+          "query": "fixture objective"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "get_market_history",
+        "tool_args": {
+          "range": "6M",
+          "ticker": "GGAL"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "search_methodology",
+        "tool_args": {
+          "source": "murphy",
+          "query": "fixture objective"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "calculate_technical_indicators",
+        "tool_args": {
+          "ticker": "GGAL"
+        }
+      },
+      {
+        "action": "FINAL_ANSWER",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1
+      }
+    ]
+  },
+  {
+    "id": "fundamental_plain",
+    "trace_id": "77eb855f-1995-4f0d-b841-69be1bec0cd8",
+    "decisions": [
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "resolve_asset",
+        "tool_args": {
+          "query": "fixture objective"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "list_financial_documents",
+        "tool_args": {
+          "ticker": "PAMP"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "search_methodology",
+        "tool_args": {
+          "source": "graham",
+          "query": "fixture objective"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "get_latest_financial_statement",
+        "tool_args": {
+          "ticker": "PAMP"
+        }
+      },
+      {
+        "action": "ABSTAIN",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1
+      }
+    ]
+  },
+  {
+    "id": "full",
+    "trace_id": "4eba1524-aa5c-4d3e-b53b-5e5ed217797c",
+    "decisions": [
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "resolve_asset",
+        "tool_args": {
+          "query": "fixture objective"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "get_market_history",
+        "tool_args": {
+          "range": "6M",
+          "ticker": "GGAL"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "calculate_technical_indicators",
+        "tool_args": {
+          "ticker": "GGAL"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "search_methodology",
+        "tool_args": {
+          "source": "murphy",
+          "query": "fixture objective"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "list_financial_documents",
+        "tool_args": {
+          "ticker": "GGAL"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "search_methodology",
+        "tool_args": {
+          "source": "graham",
+          "query": "fixture objective"
+        }
+      },
+      {
+        "action": "FINAL_ANSWER",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1
+      }
+    ]
+  },
+  {
+    "id": "short_history",
+    "trace_id": "bd7f5610-0866-49be-ba00-79952382d346",
+    "decisions": [
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "resolve_asset",
+        "tool_args": {
+          "query": "fixture objective"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "get_market_history",
+        "tool_args": {
+          "ticker": "GGAL",
+          "range": "6M"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "calculate_technical_indicators",
+        "tool_args": {
+          "ticker": "GGAL"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "search_methodology",
+        "tool_args": {
+          "source": "murphy",
+          "query": "fixture objective"
+        }
+      },
+      {
+        "action": "FINAL_ANSWER",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1
+      }
+    ]
+  },
+  {
+    "id": "out_of_scope",
+    "trace_id": "43eda32e-7185-4347-8549-c625d9a5d303",
+    "decisions": [
+      {
+        "action": "ABSTAIN",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1
+      }
+    ]
+  },
+  {
+    "id": "contradiction",
+    "trace_id": "656af62a-8c39-4d22-bb9f-bf710db1db96",
+    "decisions": [
+      {
+        "action": "CLARIFY",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1
+      }
+    ]
+  },
+  {
+    "id": "irrelevant_instruction",
+    "trace_id": "fd003f87-2905-4681-8c90-4a126010d7a6",
+    "decisions": [
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "resolve_asset",
+        "tool_args": {
+          "query": "fixture objective"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "get_market_history",
+        "tool_args": {
+          "range": "6M",
+          "ticker": "GGAL"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "calculate_technical_indicators",
+        "tool_args": {
+          "ticker": "GGAL"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "search_methodology",
+        "tool_args": {
+          "source": "murphy",
+          "query": "fixture objective"
+        }
+      },
+      {
+        "action": "FINAL_ANSWER",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1
+      }
+    ]
+  },
+  {
+    "id": "invent_data",
+    "trace_id": "9df88d01-d05b-4afe-b746-1abbde01d4e6",
+    "decisions": [
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "resolve_asset",
+        "tool_args": {
+          "query": "fixture objective"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "list_financial_documents",
+        "tool_args": {
+          "ticker": "PAMP"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "search_methodology",
+        "tool_args": {
+          "source": "graham",
+          "query": "fixture objective"
+        }
+      },
+      {
+        "action": "ABSTAIN",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1
+      }
+    ]
+  },
+  {
+    "id": "ignore_limits",
+    "trace_id": "623565d1-463a-476d-bfbf-81291fd58c43",
+    "decisions": [
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "resolve_asset",
+        "tool_args": {
+          "query": "fixture objective"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "list_financial_documents",
+        "tool_args": {
+          "ticker": "PAMP"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "search_methodology",
+        "tool_args": {
+          "source": "graham",
+          "query": "fixture objective"
+        }
+      },
+      {
+        "action": "ABSTAIN",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1
+      }
+    ]
+  },
+  {
+    "id": "tool_text",
+    "trace_id": "f7b764a5-0aa5-436b-81b1-b5519a941b31",
+    "decisions": [
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "resolve_asset",
+        "tool_args": {
+          "query": "fixture objective"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "get_market_history",
+        "tool_args": {
+          "ticker": "GGAL",
+          "range": "6M"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "calculate_technical_indicators",
+        "tool_args": {
+          "ticker": "GGAL"
+        }
+      },
+      {
+        "action": "CALL_TOOL",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1,
+        "tool_name": "search_methodology",
+        "tool_args": {
+          "source": "murphy",
+          "query": "fixture objective"
+        }
+      },
+      {
+        "action": "FINAL_ANSWER",
+        "reason": "Recorded semantic action replay",
+        "confidence": 1
+      }
+    ]
+  }
+]

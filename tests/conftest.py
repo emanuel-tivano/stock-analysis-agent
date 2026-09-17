@@ -54,6 +54,8 @@ def make_agent(payload):
 
     def factory(provider=None, market_status=200, data=None, max_steps=12):
         def handler(request):
+            if request.url.path.endswith("/quote"):
+                return httpx.Response(503, json={"ok": False})
             if "/history" in request.url.path:
                 body = dict(payload if data is None else data)
                 body["symbol"] = request.url.path.split("/")[-2]

@@ -34,7 +34,13 @@ def test_duplicates_rejected(payload):
 
 
 def test_market_http(payload):
+    paths = []
+
     def handler(request):
+        paths.append(request.url.path)
+        if request.url.path == "/api/stocks/GGAL/quote":
+            assert dict(request.url.params) == {"market": "bCBA"}
+            return httpx.Response(503)
         assert request.url.path == "/api/stocks/GGAL/history"
         assert dict(request.url.params) == {"range": "6M", "market": "bCBA"}
         return httpx.Response(200, json=payload)
@@ -44,6 +50,7 @@ def test_market_http(payload):
             ArgentinaMarketTrackerClient(http, "https://test").get_history("GGAL", "6M").ticker
             == "GGAL"
         )
+    assert paths == ["/api/stocks/GGAL/history", "/api/stocks/GGAL/quote"]
 
 
 @pytest.mark.parametrize("status", [403, 429, 500])

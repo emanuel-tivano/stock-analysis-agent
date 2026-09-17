@@ -61,12 +61,29 @@ class Bar(Model):
     high: float = Field(gt=0)
     low: float = Field(gt=0)
     close: float = Field(gt=0)
-    volume: float = Field(ge=0)
+    # Required field: explicit null means unknown, never zero traded units.
+    volume: float | None = Field(ge=0)
 
     @model_validator(mode="after")
     def valid_prices(self):
         if not self.low <= min(self.open, self.close) <= max(self.open, self.close) <= self.high:
             raise ValueError("Inconsistent OHLC")
+        return self
+
+
+class QuoteSnapshot(Model):
+    bar: Bar
+    source: str
+    observed_at: datetime
+    fetched_at: datetime
+    currency: str = Field(min_length=1)
+    mode: Literal["live"] = "live"
+    provisional: Literal[True] = True
+
+    @model_validator(mode="after")
+    def aware(self):
+        if self.observed_at.tzinfo is None or self.fetched_at.tzinfo is None:
+            raise ValueError("Quote timestamps require timezone")
         return self
 
 
@@ -79,6 +96,11 @@ class MarketHistory(Model):
     mode: Literal["live", "demo", "unknown"] = "unknown"
     stale: bool = False
     currency: str | None = None
+    quote: QuoteSnapshot | None = None
+    discarded_rows: int = Field(default=0, ge=0)
+    enrichment_status: Literal[
+        "not_requested", "appended", "excluded", "not_newer", "unavailable", "ineligible_history"
+    ] = "not_requested"
 
     @model_validator(mode="after")
     def ordered(self):
@@ -87,22 +109,104 @@ class MarketHistory(Model):
             raise ValueError("Bars must be unique and chronological")
         if self.fetched_at.tzinfo is None:
             raise ValueError("fetched_at requires timezone")
+        if (self.quote is not None) != (self.enrichment_status in ("appended", "excluded")):
+            raise ValueError("Appended enrichment requires quote provenance")
+        if (
+            self.quote
+            and self.enrichment_status == "appended"
+            and (
+                len(self.bars) < 2
+                or self.bars[-1] != self.quote.bar
+                or self.currency != self.quote.currency
+            )
+        ):
+            raise ValueError("Quote must describe the last bar in the same currency")
+        if (
+            self.quote
+            and self.enrichment_status == "excluded"
+            and (
+                not self.bars
+                or self.quote.bar.date <= self.bars[-1].date
+                or self.currency != self.quote.currency
+            )
+        ):
+            raise ValueError("Excluded quote must be newer and in the same currency")
         return self
 
 
 class TechnicalMetrics(Model):
+    current_price: float | None = Field(default=None, gt=0)
+    macd_histogram: float | None = None
     sma20: float | None = None
     sma50: float | None = None
     ema12: float | None = None
     ema26: float | None = None
-    rsi14: float | None = None
+    rsi14: float | None = Field(default=None, ge=0, le=100)
     macd: float | None = None
     macd_signal: float | None = None
     change_percent: float | None = None
     period_high: float | None = None
     period_low: float | None = None
     average_volume: float | None = None
-    sample_size: int = 0
+    sample_size: int = Field(default=0, ge=0)
+
+
+Signal = Literal["BULLISH", "BEARISH", "NEUTRAL", "MIXED", "UNAVAILABLE"]
+
+
+class TechnicalSignal(Model):
+    signal: Signal
+    explanation: str
+
+
+class IndicatorBasis(Model):
+    history_as_of: date | None = None
+    indicators_as_of: date | None = None
+    history_fetched_at: datetime | None = None
+    history_closure: Literal["UNVERIFIED"] = "UNVERIFIED"
+    quote_as_of: date | None = None
+    quote_observed_at: datetime | None = None
+    quote_fetched_at: datetime | None = None
+    quote_price: float | None = None
+    quote_provisional: bool = False
+    quote_in_indicators: bool = False
+    policy: Literal["HISTORY_ONLY", "INCLUDE_PROVISIONAL_OHLC"] = "HISTORY_ONLY"
+
+
+class TechnicalAssessment(Model):
+    status: Literal[
+        "COMPLETE",
+        "PARTIAL",
+        "INSUFFICIENT_DATA",
+        "SOURCE_ERROR",
+        "STALE",
+        "INVALID_DATA",
+        "UNVERIFIED",
+    ]
+    signals: dict[str, TechnicalSignal] = Field(default_factory=dict)
+    trend: Signal = "UNAVAILABLE"
+    momentum: Signal = "UNAVAILABLE"
+    momentum_state: Literal[
+        "BULLISH",
+        "BEARISH",
+        "NEUTRAL",
+        "MIXED",
+        "UNAVAILABLE",
+        "IMPROVING_BUT_BEARISH",
+        "WEAKENING_BUT_BULLISH",
+    ] = "UNAVAILABLE"
+    confirmation: Literal["ALIGNED", "UNCONFIRMED", "UNAVAILABLE"] = "UNAVAILABLE"
+    completion_reasons: list[str] = Field(default_factory=list)
+    basis: IndicatorBasis = Field(default_factory=IndicatorBasis)
+    conclusion: Signal = "UNAVAILABLE"
+    confidence: Literal["HIGH", "MEDIUM", "LOW", "UNAVAILABLE"] = "UNAVAILABLE"
+    as_of: date | None = None
+    fetched_at: datetime | None = None
+    freshness: Literal["RECENT", "STALE", "INVALID", "UNKNOWN"] = "UNKNOWN"
+    missing_indicators: dict[str, str] = Field(default_factory=dict)
+    agreements: list[str] = Field(default_factory=list)
+    conflicts: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class FinancialDocument(Model):
@@ -137,6 +241,12 @@ class ToolResult(Model):
     data: dict[str, Any] = Field(default_factory=dict)
     error: ErrorInfo | None = None
     latency_ms: float = 0
+    operation_key: str | None = None
+    attempts: int = 0
+    max_attempts: int = 2
+    error_kind: str | None = None
+    can_retry: bool = False
+    retry_budget_exhausted: bool = False
 
 
 class AgentDecision(Model):
@@ -168,8 +278,15 @@ class Dimension(Model):
         "NEGATIVE",
         "INSUFFICIENT_DATA",
         "NOT_REQUESTED",
+        "SOURCE_ERROR",
+        "STALE",
+        "INVALID_DATA",
+        "UNVERIFIED",
     ] = "INSUFFICIENT_DATA"
     metrics: TechnicalMetrics | None = None
+    history_only_metrics: TechnicalMetrics | None = None
+    assessment: TechnicalAssessment | None = None
+    narrative_origin: Literal["deterministic"] | None = None
     evidence: list[Evidence] = Field(default_factory=list)
     interpretation: str = ""
     limitations: list[str] = Field(default_factory=list)
@@ -187,6 +304,28 @@ class DataQuality(Model):
     abstentions: list[str] = Field(default_factory=list)
 
 
+class Generation(Model):
+    mode: Literal["SIMULATED", "LLM_ORCHESTRATED", "DETERMINISTIC_FALLBACK", "FAILED"] = "SIMULATED"
+    llm_status: Literal[
+        "NOT_USED",
+        "SUCCEEDED",
+        "RATE_LIMITED",
+        "QUOTA_EXHAUSTED",
+        "UNAVAILABLE",
+        "INVALID_OUTPUT",
+        "CONFIGURATION_ERROR",
+        "FAILED",
+    ] = "NOT_USED"
+    provider: str | None = None
+    requested_model: str | None = None
+    model: str | None = None
+    model_version: str | None = None
+    attempts: int = 0
+    retry_after_seconds: float | None = Field(default=None, ge=0)
+    model_fallback_used: bool = False
+    warnings: list[str] = Field(default_factory=list)
+
+
 class FinalAnalysis(Model):
     status: Literal["ANSWER", "CLARIFY", "ABSTAIN", "ERROR"]
     ticker: Ticker | None = None
@@ -194,6 +333,7 @@ class FinalAnalysis(Model):
     analysis_type: Literal["technical", "fundamental", "full"]
     as_of: date | None = None
     executive_summary: str
+    generation: Generation = Field(default_factory=Generation)
     technical: Dimension = Field(default_factory=Dimension)
     fundamental: Dimension = Field(default_factory=Dimension)
     integrated_view: IntegratedView = Field(default_factory=IntegratedView)
@@ -214,6 +354,7 @@ class AgentState(Model):
     tool_calls: list[ToolCall] = Field(default_factory=list)
     technical_data: MarketHistory | None = None
     technical_metrics: TechnicalMetrics | None = None
+    technical_assessment: TechnicalAssessment | None = None
     financial_data: list[FinancialDocument] = Field(default_factory=list)
     methodology_evidence: list[Evidence] = Field(default_factory=list)
     missing_information: list[str] = Field(default_factory=list)

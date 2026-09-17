@@ -21,7 +21,6 @@ from merval_agent.memory.sqlite import SQLiteRepository
                 "resolve_asset",
                 "get_market_history",
                 "calculate_technical_indicators",
-                "search_methodology",
             ],
         ),
         (
@@ -47,9 +46,9 @@ from merval_agent.memory.sqlite import SQLiteRepository
         (
             "Analizá técnicamente GGAL",
             503,
-            "ABSTAIN",
+            "ERROR",
             "GGAL",
-            ["resolve_asset", "get_market_history", "search_methodology"],
+            ["resolve_asset", "get_market_history"],
         ),
     ],
 )
@@ -93,8 +92,15 @@ def test_golden_trace(make_agent, tmp_path, message, market_status, status, tick
         call = next(c for c in state.tool_calls if c.name == "get_market_history")
         assert call.arguments["range"] == "6M"
         assert result.fundamental.status == "NOT_REQUESTED"
-        assert result.technical.status == "INSUFFICIENT_DATA"
-        assert "technical" in result.data_quality.abstentions
+        expected_dimension = (
+            "SOURCE_ERROR"
+            if status == "ERROR"
+            else "INSUFFICIENT_DATA"
+            if status == "ABSTAIN"
+            else "BULLISH"
+        )
+        assert result.technical.status == expected_dimension
+        assert ("technical" in result.data_quality.abstentions) == (status == "ABSTAIN")
     if market_status != 200:
         failure = next(e for e in trace["events"] if e["event"] == "TOOL_FAILED")
         assert failure["error"] == "EXTERNAL_SERVICE"
@@ -130,9 +136,9 @@ def test_api_utf8_and_docs(make_agent):
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
         assert response.status_code == 200
-        assert response.headers["content-type"] == "application/json"
+        assert response.headers["content-type"] == "application/json; charset=utf-8"
         raw = response.content.decode("utf-8", errors="strict")
-        for expected in ("Métricas técnicas", "conclusión", "Metodología"):
+        for expected in ("Señal técnica", "pronóstico", "métricas"):
             assert expected in raw
             assert expected.encode("utf-8") in response.content
         assert repo.records[-1][0].user_request == text

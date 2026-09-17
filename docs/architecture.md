@@ -1,4 +1,8 @@
-# Arquitectura — Fase 1
+# Arquitectura — Fase 1 y extensiones
+
+Estado actual y cambios de contratos: [análisis técnico v4](technical-v4.md).
+Antecedente: [análisis técnico v3](technical-v3.md).
+Las secciones de Fase 1/2A siguientes conservan contexto histórico donde se indica.
 
 ## Límites y dependencias
 
@@ -35,7 +39,7 @@ tools requiere una nueva solicitud; no se permite ampliar alcance silenciosament
 
 MarketHistory conserva barras cronológicas, fuente, fetched_at, mode, stale y moneda.
 TechnicalMetrics no recibe cifras del LLM: la tool toma el historial guardado en el estado.
-La variación usa primer y último cierre; extremos usan high/low, volumen usa media aritmética.
+La variación usa primer y último cierre; extremos usan high/low, volumen usa media aritmética solo si todas las barras tienen volumen conocido; de otro modo es null.
 EMA se inicializa con SMA del período. MACD alinea EMA12 y EMA26 en la rueda 26 y calcula
 señal EMA9 sobre la línea MACD desde la rueda 34. RSI usa Wilder; sin pérdidas = 100,
 sin ganancias = 0, serie plana = 50. Sin muestra suficiente = null, sin redondeo interno.
@@ -52,16 +56,19 @@ semántica del texto: la validación estructural no garantiza corrección financ
 
 ## Suficiencia y reportes
 
-ANSWER habilita un informe parcial de cálculos con historial live reciente y SMA20/RSI14
-disponibles. Datos demo, desconocidos, antiguos o escasos fuerzan abstención. Fundamental
-siempre INSUFFICIENT_DATA mientras no exista extracción confiable. Categorías direccionales
-y valoración están reservadas y no se asignan en Fase 1. `NOT_REQUESTED` distingue una dimensión
-fuera del pedido. Se conserva `as_of` del último dato de mercado; los documentos tienen su
-propia fecha de publicación en evidence. No se inventa una fecha de balance.
+`domain/technical_assessment.py` centraliza ventanas, suficiencia, vigencia y señales.
+El loop calcula assessment antes de cada decisión; la proyección del contexto lo entrega al
+LLM junto con métricas separadas. El reporte aplica las mismas reglas y redacta desde ellas.
+No publica cifras ni conclusiones libres del LLM. No impone una secuencia nueva de tools.
+Mínimo parcial: precio y 15 observaciones; completo: todos los indicadores con ventanas
+hasta 50, sin filas descartadas. Volumen ausente no invalida los indicadores de precios.
+El contrato técnico separa estado de datos, dirección, confianza de evidencia y narrativa.
+Fundamental conserva su estado insuficiente; `NOT_REQUESTED` distingue lo no solicitado.
 
-El umbral de antigüedad usa días calendario, no calendario de ruedas. No hay garantía sobre
-ajustes corporativos ni completitud del historial. La interpretación es del provider y requiere
-evaluación adicional antes de habilitar afirmaciones direccionales.
+Vigencia usa tolerancia calendario (7 días), respeta fines de semana y permite inyectar
+feriados verificados en la función pura. No hay un calendario BYMA integrado ni certificación
+de cierres. `as_of` es la última observación; fetched_at sigue siendo recepción upstream.
+Una quote provisional nunca rejuvenece un histórico vencido.
 
 ## Observabilidad y privacidad
 
@@ -98,3 +105,43 @@ reordenar tools y ampliar el rango tras una observación insuficiente.
   APPROVE autoriza exactamente la propuesta; MODIFY genera una propuesta nueva y REJECT
   termina sin ejecutar. La ejecución futura deberá ser idempotente y auditable; aún no existe.
 - API: reanudación conversacional, políticas de concurrencia y autenticación al publicar.
+
+## Extensión implementada en Fase 2A
+
+El mismo loop usa la capacidad opcional `decide_validated` del provider compatible para
+reintentar dentro del step con callback de validación/eventos. No cambia LLMProvider.decide
+ni los modelos del dominio. Registry.validate se reutiliza antes de aceptar la propuesta;
+se rechazan duplicados de llamadas exitosas sin consumir otra API de datos.
+
+El contexto es una proyección explícita y acotada, no AgentState.model_dump. El prompt
+versionado incluye políticas operacionales. Los intentos agregan eventos a la lista existente,
+sin migración SQLite. La narrativa compatible se publica como texto operacional fijo para
+no propagar afirmaciones financieras sin verificar; Fake conserva su texto previo.
+El evaluador independiente usa datos sintéticos y guarda métricas por caso/repetición.
+
+La ejecución externa estaba pendiente en esta etapa histórica; la evidencia posterior
+está en [phase2-closure.md](phase2-closure.md). Detalles y límites en
+[phase2a-real-llm.md](phase2a-real-llm.md). Las secciones anteriores describen la baseline
+Fase 1; la interpretación libre del provider allí mencionada solo se conserva para Fake.
+
+## Gemini nativo
+
+`HTTPDecisionProvider` comparte el mecanismo de decisión validada/retry entre Compatible y
+Gemini. `build_provider` selecciona los tres providers para API y evaluador. Gemini adapta
+los mensajes a systemInstruction/contents y normaliza candidates/usageMetadata; no agrega
+funciones nativas ni contratos nuevos. EquityAgent no recibe detalles de Gemini.
+Más detalles y evidencia de ejecución en [gemini-native.md](gemini-native.md).
+
+## Enriquecimiento provisional y fallos técnicos (16/09/2026)
+
+MarketHistory.quote conserva barra, moneda, observed_at, fetched_at local, URL y provisional=true.
+El source/fetched_at superior siguen perteneciendo al histórico upstream. El reporte publica
+dos evidencias y as_of del último dato, sin presentarlo como cierre confirmado. Antigüedad
+en días calendario de Buenos Aires, tanto del histórico base como de la barra final.
+No hay calendario bursátil ni heurística por hora para certificar cierres.
+
+Enrichment_status y discarded_rows hacen visibles fallback y muestra parcial. El adapter
+hace como máximo un request opcional adicional y no reintenta quotes. Una falla opcional
+no invalida el histórico; una falla de tool no recuperada termina ERROR. Un resultado
+posterior exitoso de la misma capacidad recupera el fallo. DEMO/ausencia válida siguen
+siendo insuficiencia de evidencia (ABSTAIN). Las fórmulas de precios no cambiaron.

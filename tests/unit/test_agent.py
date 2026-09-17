@@ -18,7 +18,6 @@ def test_technical_does_not_call_fundamentals(make_agent):
         "resolve_asset",
         "get_market_history",
         "calculate_technical_indicators",
-        "search_methodology",
     ]
     assert result.trace_id
 
@@ -59,23 +58,24 @@ def test_max_steps(make_agent):
     )
     agent, repo = make_agent(provider=provider, max_steps=3)
     result = agent.run("GGAL")
-    assert result.status == "ABSTAIN"
+    assert result.status == "ERROR"
     assert repo.records[0][0].iteration_count == 3
-    assert "Límite de pasos alcanzado" in result.data_quality.missing_information
+    assert names(repo) == ["resolve_asset"]  # Duplicate proposals never execute.
+    assert len(result.errors) == 2
 
 
 def test_invalid_decision_reaches_limit(make_agent):
     agent, repo = make_agent(provider=FakeLLMProvider(lambda s: {"action": "BUY"}), max_steps=2)
     result = agent.run("GGAL")
-    assert result.status == "ABSTAIN"
+    assert result.status == "ERROR"
     assert len(result.errors) == 2
     assert result.errors[0].code == "INVALID_DECISION"
 
 
-def test_external_error_observed_and_abstains(make_agent):
+def test_external_error_observed_and_reported(make_agent):
     agent, repo = make_agent(market_status=429)
     result = agent.run("Técnico GGAL")
-    assert result.status == "ABSTAIN"
+    assert result.status == "ERROR"
     assert result.errors[0].code == "EXTERNAL_SERVICE"
     assert "calculate_technical_indicators" not in names(repo)
 
@@ -87,7 +87,8 @@ def test_demo_and_empty_never_answer(make_agent, payload):
         {**payload, "meta": {"stale": True, "source": "live"}},
     ):
         agent, _ = make_agent(data=data)
-        assert agent.run("Técnico GGAL").status == "ABSTAIN"
+        expected = "ABSTAIN" if data["data"] else "ERROR"
+        assert agent.run("Técnico GGAL").status == expected
 
 
 def test_demo_corpus_cannot_support_murphy_claim(make_agent):
@@ -145,7 +146,8 @@ def test_business_guard_rejects_unnecessary_tool(make_agent):
 
     agent, repo = make_agent(provider=FakeLLMProvider(script), max_steps=2)
     result = agent.run("Técnico GGAL")
-    assert result.errors[0].code == "INVALID_TOOL_CALL"
+    assert result.errors[0].code == "INVALID_DECISION"
+    assert names(repo) == ["resolve_asset"]
     assert not repo.records[0][0].observations[-1].success
 
 

@@ -56,6 +56,8 @@ def calculate(bars: list[Bar]) -> TechnicalMetrics:
     values = [b.close for b in bars]
     line, signal = macd(values)
     return TechnicalMetrics(
+        current_price=values[-1],
+        macd_histogram=line - signal if line is not None and signal is not None else None,
         sma20=sma(values, 20),
         sma50=sma(values, 50),
         ema12=ema(values, 12),
@@ -66,6 +68,8 @@ def calculate(bars: list[Bar]) -> TechnicalMetrics:
         change_percent=(values[-1] / values[0] - 1) * 100 if len(values) > 1 else None,
         period_high=max(b.high for b in bars),
         period_low=min(b.low for b in bars),
-        average_volume=fmean(b.volume for b in bars),
+        average_volume=fmean(b.volume for b in bars)
+        if all(b.volume is not None for b in bars)
+        else None,
         sample_size=len(bars),
     )

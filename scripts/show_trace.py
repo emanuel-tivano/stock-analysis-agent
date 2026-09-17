@@ -23,6 +23,24 @@ def main():
     if not trace["events"]:
         print("Legacy execution: only tool trace available.")
     for event in trace["events"] or trace["tool_trace"]:
+        if event.get("event") in ("LLM_SUCCEEDED", "LLM_FAILED", "DECISION_VALIDATION_FAILED"):
+            print(
+                "LLM provider={provider} model={model} version={version} attempt={attempt} "
+                "http={http} class={classification} validation={validation} latency_ms={latency}".format(
+                    provider=event.get("provider"),
+                    model=event.get("model"),
+                    version=event.get("modelVersion"),
+                    attempt=event.get("retry_number", 0) + 1,
+                    http=event.get("http_status"),
+                    classification=event.get("error_class"),
+                    validation=event.get("validation_outcome"),
+                    latency=event.get("latency_ms"),
+                )
+            )
+        if event.get("generation"):
+            print("GENERATION " + json.dumps(event["generation"], ensure_ascii=True))
+        if event.get("market_data"):
+            print("MARKET " + json.dumps(event["market_data"], ensure_ascii=True))
         print(json.dumps(event, ensure_ascii=True, sort_keys=True))
 
 
