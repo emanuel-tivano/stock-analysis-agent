@@ -146,6 +146,24 @@ def test_presenter_translates_confidence_momentum_and_provisional_data():
     assert presented.user_message is None
 
 
+@pytest.mark.parametrize(
+    ("zero_signal", "signal_signal", "expected"),
+    [
+        ("BULLISH", "NEUTRAL", "Permanece sobre cero y en línea con su señal."),
+        ("BEARISH", "NEUTRAL", "Permanece bajo cero y en línea con su señal."),
+        ("NEUTRAL", "BULLISH", "Está cerca de cero y por encima de su señal."),
+        ("NEUTRAL", "BEARISH", "Está cerca de cero y por debajo de su señal."),
+        ("NEUTRAL", "NEUTRAL", "Está cerca de cero y en línea con su señal."),
+    ],
+)
+def test_presenter_summarizes_neutral_macd_combinations(zero_signal, signal_signal, expected):
+    result = analysis()
+    result.technical.assessment.signals["macd_zero"].signal = zero_signal
+    result.technical.assessment.signals["macd_signal"].signal = signal_signal
+
+    assert present_analysis(result).macd_summary == expected
+
+
 def test_presenter_handles_unavailable_optional_and_partial_fields():
     result = analysis(
         conclusion="UNAVAILABLE",

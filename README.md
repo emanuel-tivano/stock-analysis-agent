@@ -1,9 +1,12 @@
 # Merval Equity Analyst AI
 
-Estado actual: [cierre y evaluación de la V1 técnica](docs/technical-v1-closure.md):
-628 tests aprobados, 4 opt-in omitidos; Fake histórico 17/17 y técnico 33/33.
-Capturas reales de GGAL/BMA contrastadas con un oráculo independiente; no se ejecutó
-una nueva evaluación con LLM real en este cierre.
+Estado actual: [auditoría integral del 17/09/2026](docs/audit-2026-09-17.md):
+665 tests aprobados, 4 opt-in omitidos y evaluación técnica Fake 33/33.
+El cierre de la V1 técnica está documentado en
+[cierre y evaluación de la V1 técnica](docs/technical-v1-closure.md).
+Capturas históricas documentadas de GGAL/BMA fueron contrastadas con un oráculo independiente;
+sus artefactos son locales e ignorados por Git. No se ejecutó una nueva evaluación con LLM real
+en este cierre.
 Antecedente: [análisis técnico v4, resiliencia y pruebas reales](docs/technical-v4.md).
 Antecedente: [análisis técnico v3 y verificación](docs/technical-v3.md).
 Antecedente: [auditoría integral del 16/09/2026](docs/audit-2026-09-16.md).
@@ -18,6 +21,14 @@ Base Python para el Trabajo Final Integrador de la Certificación Profesional en
 Developer del ITBA. Asistente educativo de investigación de acciones argentinas.
 Proyecto independiente: **Argentina Market Tracker se consume por HTTP**, sin copiar su
 proveedor, cache ni lógica bursátil. No emite recomendaciones BUY/SELL.
+
+**Integrante:** Emanuel Tivano.
+
+**Problema:** reunir datos de mercado, cálculos técnicos, procedencia y limitaciones en una
+respuesta auditable, sin delegar cifras ni señales financieras al LLM.
+
+**Destinatarios:** personas que investigan acciones argentinas con fines educativos y
+necesitan una primera lectura técnica reproducible; no sustituye asesoramiento financiero.
 
 ## Qué funciona en esta iteración
 
@@ -66,8 +77,8 @@ Ver [arquitectura](docs/architecture.md) y
 
 ## Instalación (Python 3.11+)
 
-Verificado en Windows con Python 3.14.6. `>=3.11` es el mínimo declarado;
-esta consolidación no verifica otras versiones de Python.
+Verificado desde cero en Windows con Python 3.14.6. `>=3.11` es el mínimo declarado;
+esta consolidación no pudo ejecutar Python 3.11 porque ese intérprete no está instalado.
 
 ```powershell
 python -m venv .venv
@@ -82,6 +93,8 @@ versiones del entorno verificado. Para reproducirlas: `pip install -r requiremen
 y luego `pip install --no-deps -e .`. No contiene credenciales.
 También se verifica instalación editable en un entorno nuevo con
 `python -m pip install -e ".[dev]" -c requirements-tested.txt`, conservando las versiones probadas.
+Además se construyó una wheel, se comprobó que incluye la web y el skill, se instaló sin modo
+editable en el entorno temporal y se repitió el smoke desde fuera del repositorio.
 
 ## Ejecutar
 
@@ -280,8 +293,9 @@ SQLite conserva cada ejecución, pedido, estado final, trace de tools sanitizado
 no reconstruye conversaciones ni reanuda CLARIFY automáticamente. `session_id` agrupa ejecuciones.
 El usuario envía una nueva solicitud completa tras aclarar.
 También conserva los eventos de decisión y transición. `.gitignore` cubre `.env`, bases,
-PDFs, datos privados, caches y logs. El árbol actual incluye `.git` y cambios previos sin commit; la auditoría integral
-distingue el estado inicial de sus propias correcciones.
+PDFs, datos privados, caches y logs. Al iniciar la auditoría del 17/09/2026, `main` estaba
+limpio y coincidía con `origin/main` en `988e8449c0e91c28197c6cc4bbd7b82979c04765`;
+el informe distingue ese estado inicial de las correcciones posteriores.
 
 Fase 2: validar provider real y selección de tools, RAG privado con citas verificables,
 extracción acotada de balances y revisión humana, ratios por sector, evaluación de conclusiones,
@@ -294,7 +308,8 @@ Se reutiliza el adapter HTTP compatible, con contexto acotado, prompt `phase2a-v
 validación Pydantic y de negocio antes de ejecutar tools, retries limitados y tracing de
 intentos/usage. Fake y golden traces de Fase 1 permanecen sin cambios.
 
-**El LLM externo todavía no fue validado:** no hay URL/modelo/credenciales configurados.
+**Estado histórico al preparar Fase 2A:** el LLM externo todavía no había sido validado;
+no había URL/modelo/credenciales configurados.
 El soporte está probado con transporte simulado. Hay 17 casos opt-in y runner con
 repeticiones y comparación Fake/Real; no equivale a una prueba de razonamiento real.
 La prosa de salida del provider real es operacional y determinística; las cifras siguen

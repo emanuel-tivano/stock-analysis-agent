@@ -220,6 +220,11 @@ def _macd_summary(assessment: TechnicalAssessment) -> str:
         ("BULLISH", "BEARISH"): "Pierde impulso de corto plazo, pero todavía sobre cero.",
         ("BEARISH", "BEARISH"): "Continúa bajo cero y por debajo de su señal.",
         ("BULLISH", "BULLISH"): "Continúa sobre cero y por encima de su señal.",
+        ("BULLISH", "NEUTRAL"): "Permanece sobre cero y en línea con su señal.",
+        ("BEARISH", "NEUTRAL"): "Permanece bajo cero y en línea con su señal.",
+        ("NEUTRAL", "BULLISH"): "Está cerca de cero y por encima de su señal.",
+        ("NEUTRAL", "BEARISH"): "Está cerca de cero y por debajo de su señal.",
+        ("NEUTRAL", "NEUTRAL"): "Está cerca de cero y en línea con su señal.",
     }
     return summaries.get(
         (zero.signal, signal.signal),

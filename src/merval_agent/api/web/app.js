@@ -12,6 +12,8 @@ const newConversationButton = document.querySelector("#new-conversation");
 
 let sessionId = sessionStorage.getItem(SESSION_KEY);
 
+class UserFacingError extends Error {}
+
 function element(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -229,15 +231,26 @@ async function submitMessage(text) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    const data = await response.json();
+    let data;
+    try {
+      data = await response.json();
+    } catch {
+      throw new UserFacingError(
+        "El servicio devolvió una respuesta inesperada. Intentá nuevamente.",
+      );
+    }
     if (!response.ok) {
-      throw new Error(data.error?.message || "No pude procesar la consulta.");
+      throw new UserFacingError(data.error?.message || "No pude procesar la consulta.");
     }
     sessionId = data.session_id;
     sessionStorage.setItem(SESSION_KEY, sessionId);
     renderAgentMessage(data);
   } catch (error) {
-    showError(error instanceof Error ? error.message : "No pude procesar la consulta.");
+    showError(
+      error instanceof UserFacingError
+        ? error.message
+        : "No pude conectarme con el servicio. Intentá nuevamente en unos minutos.",
+    );
   } finally {
     setBusy(false);
     input.focus();

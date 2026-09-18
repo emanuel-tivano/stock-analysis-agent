@@ -15,9 +15,11 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 
+from merval_agent.domain.policy import MARKET_TIMEZONE
+
 
 def market_payload(symbol: str, history_range: str, sample_size: int = 60) -> dict:
-    today = datetime.now(UTC).date()
+    today = datetime.now(MARKET_TIMEZONE).date()
     rows = []
     for index in range(sample_size):
         close = 101 + index

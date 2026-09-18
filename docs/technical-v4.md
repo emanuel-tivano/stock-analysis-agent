@@ -104,7 +104,7 @@ Los tests nuevos cubren las combinaciones direccionales, RSI sin sobreventa, vol
 
 ## Resultados reales y ejemplos completos
 
-Evidencia en `evals/results/technical-v4/live-20260916T224609Z/`: cada JSON contiene **respuesta completa, snapshot normalizado y traza**. Las métricas devueltas coinciden con el recálculo Python de los snapshots. Esto verifica integridad aritmética y protección frente al LLM, no certifica la calidad económica del proveedor.
+Evidencia local en `evals/results/technical-v4/live-20260916T224609Z/`: cada JSON contiene **respuesta completa, snapshot normalizado y traza**. Ese directorio está ignorado por Git y no forma parte de un clon. Las métricas devueltas coinciden con el recálculo Python de los snapshots. Esto verifica integridad aritmética y protección frente al LLM, no certifica la calidad económica del proveedor.
 
 | Solicitud | Resultado | Tendencia / momentum | Completitud | Intentos / latencia |
 |---|---|---|---|---|
@@ -115,16 +115,16 @@ Evidencia en `evals/results/technical-v4/live-20260916T224609Z/`: cada JSON cont
 
 En todos los runs se utilizó realmente **gemini-3.5-flash-lite**, el principal configurado; modelVersion confirmó ese identificador. GGAL tuvo un **503 real recuperado**; ALUA tuvo un rechazo de validación `DECISION_TEXT_BOUNDS` y posterior decisión válida. Ninguno se presenta como un 429 real. Los GET de metadata de `gemini-3.5-flash-lite` y `gemini-3.6-flash` devolvieron 200 y soporte de generateContent; no se ejecutó generación con 3.6 en esta verificación, ni un cambio real entre modelos.
 
-- [GGAL completo](../evals/results/technical-v4/live-20260916T224609Z/cd3cecda-39cc-49ae-a9ee-1b952cea57c0.json): precio 6745; SMA20 6939,25; SMA50 7382,6; RSI14 39,3453; MACD -116,1205; señal -117,9201; histograma +1,7996; volumen null. Tendencia bajista con mejora relativa de momentum aún negativo; UNCONFIRMED.
-- [ALUA completo](../evals/results/technical-v4/live-20260916T224609Z/08c42bf3-048d-4028-9979-21905c250264.json): precio 847; SMA20 861,025; SMA50 915,86; RSI14 37,4871; MACD -12,9892; señal -17,8029; histograma +4,8137; volumen null. Misma interpretación direccional, con PARTIAL por OHLC descartado; UNCONFIRMED.
-- [YPFD completo](../evals/results/technical-v4/live-20260916T224609Z/50796e36-20eb-49f4-8c1b-eace33794f73.json).
-- [Ticker inválido completo](../evals/results/technical-v4/live-20260916T224609Z/4a01fcf8-07a5-4e50-869a-6085c6dbba80.json).
-- [429 controlado completo, MOCK](../evals/results/technical-v4/mock-429/response.json): FastAPI entrega ANSWER tras tres decisiones exitosas y dos intentos fallidos HTTP 429. `generation.mode=DETERMINISTIC_FALLBACK`, `llm_status=RATE_LIMITED`, `requested_model=model=mock-gemini`, `attempts=5`, `retry_after_seconds=2`, `model_fallback_used=false`. Se conserva el error en la traza y una advertencia en la respuesta; los cálculos siguen disponibles.
-- [Traza legible de GGAL](../evals/results/technical-v4/trace-readable.txt) y [suite final](../evals/results/technical-v4/pytest-final.txt).
+- GGAL completo (`evals/results/technical-v4/live-20260916T224609Z/cd3cecda-39cc-49ae-a9ee-1b952cea57c0.json`, local): precio 6745; SMA20 6939,25; SMA50 7382,6; RSI14 39,3453; MACD -116,1205; señal -117,9201; histograma +1,7996; volumen null. Tendencia bajista con mejora relativa de momentum aún negativo; UNCONFIRMED.
+- ALUA completo (`evals/results/technical-v4/live-20260916T224609Z/08c42bf3-048d-4028-9979-21905c250264.json`, local): precio 847; SMA20 861,025; SMA50 915,86; RSI14 37,4871; MACD -12,9892; señal -17,8029; histograma +4,8137; volumen null. Misma interpretación direccional, con PARTIAL por OHLC descartado; UNCONFIRMED.
+- YPFD completo: `evals/results/technical-v4/live-20260916T224609Z/50796e36-20eb-49f4-8c1b-eace33794f73.json` (local).
+- Ticker inválido completo: `evals/results/technical-v4/live-20260916T224609Z/4a01fcf8-07a5-4e50-869a-6085c6dbba80.json` (local).
+- 429 controlado completo, MOCK (`evals/results/technical-v4/mock-429/response.json`, local): FastAPI entrega ANSWER tras tres decisiones exitosas y dos intentos fallidos HTTP 429. `generation.mode=DETERMINISTIC_FALLBACK`, `llm_status=RATE_LIMITED`, `requested_model=model=mock-gemini`, `attempts=5`, `retry_after_seconds=2`, `model_fallback_used=false`. Se conserva el error en la traza y una advertencia en la respuesta; los cálculos siguen disponibles.
+- Traza legible de GGAL (`evals/results/technical-v4/trace-readable.txt`) y suite final (`evals/results/technical-v4/pytest-final.txt`), ambas locales e ignoradas.
 
 Las ejecuciones reales usan el agente con adaptadores reales y SQLite; el contrato HTTP se verifica mediante los tests de API y la aceptación 429 mock. No se presenta el simulador Fake como integración Gemini.
 
-Después de los últimos ajustes se recalcularon offline los tres snapshots reales con el código final: coincidieron todos los valores y los estados de completitud, tendencia, momentum, conclusión y confirmación. Resultado: [replay offline](../evals/results/technical-v4/offline-replay.json). Esta repetición no llamó a Gemini ni al proveedor de mercado.
+Después de los últimos ajustes se recalcularon offline los tres snapshots reales con el código final: coincidieron todos los valores y los estados de completitud, tendencia, momentum, conclusión y confirmación. El resultado quedó en `evals/results/technical-v4/offline-replay.json`, artefacto local ignorado. Esta repetición no llamó a Gemini ni al proveedor de mercado.
 
 ## Riesgos y pendientes
 

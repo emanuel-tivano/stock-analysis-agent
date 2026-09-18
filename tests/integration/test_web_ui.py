@@ -21,6 +21,9 @@ def test_root_and_static_assets_are_served(make_agent):
     assert "text/css" in css.headers["content-type"]
     assert "javascript" in script.headers["content-type"]
     assert page.headers["content-security-policy"].startswith("default-src 'self'")
+    assert page.headers["cache-control"] == "no-store"
+    assert css.headers["cache-control"] == "no-store"
+    assert script.headers["cache-control"] == "no-store"
     assert 'addDetailRow(list, "Tendencia"' in script.text
     assert 'addDetailRow(list, "Estado del momentum"' in script.text
     assert 'addDetailRow(list, "ID de ejecución"' in script.text
