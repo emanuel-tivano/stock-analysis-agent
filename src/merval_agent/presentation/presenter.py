@@ -234,6 +234,17 @@ def _macd_summary(assessment: TechnicalAssessment) -> str:
 
 def present_analysis(result: FinalAnalysis) -> ChatResponse:
     """Build a deterministic, user-facing projection without changing domain conclusions."""
+    if result.status == "PAUSED":
+        return ChatResponse(
+            status="PAUSED",
+            result_type="other",
+            heading="Informe pendiente de revisión",
+            executive_summary=result.executive_summary,
+            pending_action=result.pending_action,
+            ticker=result.ticker,
+            trace_id=result.trace_id,
+            session_id=result.session_id,
+        )
     result_type = _result_type(result)
     if result_type in ("asset_not_found", "ambiguous_asset"):
         return ChatResponse(

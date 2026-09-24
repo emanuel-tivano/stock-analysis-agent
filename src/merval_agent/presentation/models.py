@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from merval_agent.domain.models import Model
+from merval_agent.domain.models import Model, PendingActionResponse
 
 
 class PresentedValue(Model):
@@ -46,7 +46,8 @@ class TechnicalDetails(Model):
 
 
 class ChatResponse(Model):
-    status: Literal["ANSWER", "CLARIFY", "ABSTAIN", "ERROR"]
+    status: Literal["ANSWER", "CLARIFY", "ABSTAIN", "ERROR", "PAUSED"]
+    pending_action: PendingActionResponse | None = None
     result_type: Literal[
         "successful_analysis",
         "asset_not_found",

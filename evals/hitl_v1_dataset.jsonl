@@ -1,0 +1,10 @@
+{"id":"ggal_approved","ticker":"GGAL","scenario":"approve"}
+{"id":"bma_modified","ticker":"BMA","scenario":"modify_approve"}
+{"id":"pamp_rejected","ticker":"PAMP","scenario":"reject"}
+{"id":"repeated_approval","ticker":"GGAL","scenario":"replay"}
+{"id":"stale_modification","ticker":"BMA","scenario":"stale"}
+{"id":"concurrent_decisions","ticker":"PAMP","scenario":"concurrent"}
+{"id":"restart_recovery","ticker":"GGAL","scenario":"restart"}
+{"id":"insufficient_data","ticker":"GGAL","scenario":"short"}
+{"id":"market_error","ticker":"GGAL","scenario":"error"}
+{"id":"ambiguous_asset","ticker":null,"scenario":"ambiguous"}

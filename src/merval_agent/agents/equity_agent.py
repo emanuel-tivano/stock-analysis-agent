@@ -2,9 +2,12 @@ import hashlib
 import json
 import logging
 import re
+from collections.abc import Callable
+from datetime import datetime
 from typing import get_args
 
 from merval_agent.adapters.llm.base import LLMProvider
+from merval_agent.domain.actions import EvidenceSnapshot, PendingAction, digest, requests_review
 from merval_agent.domain.errors import DecisionBudgetExhausted, ExternalServiceError
 from merval_agent.domain.models import (
     AgentDecision,
@@ -61,12 +64,14 @@ class EquityAgent:
         max_steps: int = 12,
         stale_after_days: int = 7,
         deterministic_fallback: bool = True,
+        clock: Callable[[], datetime] | None = None,
     ):
         if max_steps < 1:
             raise ValueError("max_steps must be positive")
         self.provider, self.tools, self.repository = provider, tools, repository
         self.max_steps, self.stale_after_days = max_steps, stale_after_days
         self.deterministic_fallback = deterministic_fallback
+        self.clock = clock or now
 
     def run(self, message: str, session_id: str | None = None):
         state = AgentState(
@@ -79,18 +84,46 @@ class EquityAgent:
         summary, interpretation = "Se alcanzó MAX_AGENT_STEPS sin evidencia suficiente.", ""
         consecutive_invalid = 0
         degraded = False
+        technical_snapshot_sha256 = None
+
+        def refresh_technical_snapshot():
+            nonlocal technical_snapshot_sha256
+            if not state.resolved_asset or state.resolved_asset.status != "RESOLVED":
+                state.technical_assessment = None
+                state.technical_evaluated_at = None
+                technical_snapshot_sha256 = None
+                return
+            snapshot_sha256 = digest(
+                {
+                    "history": state.technical_data.model_dump(mode="json")
+                    if state.technical_data
+                    else None,
+                    "metrics": state.technical_metrics.model_dump(mode="json")
+                    if state.technical_metrics
+                    else None,
+                }
+            )
+            if (
+                snapshot_sha256 == technical_snapshot_sha256
+                and state.technical_assessment is not None
+                and state.technical_evaluated_at is not None
+            ):
+                return
+            evaluated_at = self.clock()
+            if evaluated_at.tzinfo is None:
+                raise ValueError("Agent clock must return a timezone-aware datetime")
+            state.technical_evaluated_at = evaluated_at
+            state.technical_assessment = assess(
+                state.technical_data,
+                state.technical_metrics,
+                evaluated_at,
+                self.stale_after_days,
+            )
+            technical_snapshot_sha256 = snapshot_sha256
+
         while state.status == "RUNNING" and state.iteration_count < self.max_steps:
             state.iteration_count += 1
-            state.technical_assessment = (
-                assess(
-                    state.technical_data,
-                    state.technical_metrics,
-                    now(),
-                    self.stale_after_days,
-                )
-                if state.resolved_asset and state.resolved_asset.status == "RESOLVED"
-                else None
-            )
+            refresh_technical_snapshot()
             try:
                 validated_provider = getattr(self.provider, "decide_validated", None)
                 if validated_provider:
@@ -141,6 +174,9 @@ class EquityAgent:
                     else None,
                     confidence=decision.confidence,
                     missing_count=len(decision.missing_information),
+                    evaluated_at=state.technical_evaluated_at.isoformat()
+                    if state.technical_evaluated_at
+                    else None,
                 )
                 if decision.action == "CALL_TOOL":
                     call = ToolCall(
@@ -312,6 +348,9 @@ class EquityAgent:
                     outcome="INVALID",
                     error=error.code,
                     validation_feedback=feedback,
+                    evaluated_at=state.technical_evaluated_at.isoformat()
+                    if state.technical_evaluated_at
+                    else None,
                 )
                 if consecutive_invalid >= 2 or state.iteration_count == self.max_steps:
                     state.status = "ERROR"
@@ -360,6 +399,7 @@ class EquityAgent:
                 )
                 summary = "La ejecución terminó con un error técnico registrado."
                 event("STATE_UPDATED", state, error="INTERNAL_ERROR", transition="RUNNING->ERROR")
+        refresh_technical_snapshot()
         previous_status = state.status
         if state.status == "RUNNING":
             state.status = "ERROR"
@@ -367,7 +407,13 @@ class EquityAgent:
                 ErrorInfo(code="MAX_STEPS_EXCEEDED", message="Decision budget exhausted")
             )
             state.missing_information.append("Límite de pasos alcanzado")
-        result = build_report(state, summary, interpretation, self.stale_after_days)
+        result = build_report(
+            state,
+            summary,
+            interpretation,
+            self.stale_after_days,
+            reference_time=state.technical_evaluated_at,
+        )
         result.generation = describe_generation(state.trace_events, result.status, degraded)
         if result.generation.mode == "DETERMINISTIC_FALLBACK":
             result.technical.limitations.extend(result.generation.warnings)
@@ -375,10 +421,38 @@ class EquityAgent:
             event("STATE_UPDATED", state, transition=f"{previous_status}->{state.status}")
         if result.status == "ABSTAIN":
             event("AGENT_ABSTAINED", state)
+        pending_action = None
+        if (
+            requests_review(message)
+            and result.status == "ANSWER"
+            and result.analysis_type == "technical"
+            and result.technical.assessment
+            and result.technical.assessment.status in ("COMPLETE", "PARTIAL")
+            and state.technical_data
+        ):
+            snapshot = EvidenceSnapshot(
+                report=result.model_copy(deep=True),
+                history=state.technical_data,
+                evaluated_at=state.technical_evaluated_at,
+            )
+            pending_action = PendingAction(
+                trace_id=state.trace_id,
+                session_id=state.session_id,
+                evidence_snapshot=snapshot,
+                snapshot_sha256=digest(snapshot),
+            )
+            state.status = result.status = "PAUSED"
+            result.pending_action = pending_action.public()
+            result.executive_summary = (
+                "Borrador preparado para revisión; todavía no se finalizó el informe."
+            )
         event(
             "AGENT_FINISHED",
             state,
             generation=result.generation.model_dump(mode="json"),
+            evaluated_at=state.technical_evaluated_at.isoformat()
+            if state.technical_evaluated_at
+            else None,
             final_reason=(
                 state.errors[-1].code
                 if state.status == "ERROR" and state.errors
@@ -390,11 +464,15 @@ class EquityAgent:
             ),
         )
         try:
-            self.repository.save(state, result)
+            if pending_action is not None:
+                self.repository.save(state, result, pending_action=pending_action)
+            else:
+                self.repository.save(state, result)
         except Exception:
             previous_status = state.status
             state.status = "ERROR"
             result.status = "ERROR"
+            result.pending_action = None
             result.errors.append(
                 ErrorInfo(code="PERSISTENCE_FAILURE", message="Could not persist execution")
             )

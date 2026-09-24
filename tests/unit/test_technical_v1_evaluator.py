@@ -31,11 +31,9 @@ def test_scenarios_contain_actual_recent_crosses():
         ("trace", "tracing"),
     ],
 )
-def test_evaluator_detects_adulterated_outputs(make_agent, monkeypatch, tamper, axis):
+def test_evaluator_detects_adulterated_outputs(make_agent, tamper, axis):
     case = load_cases()[0]
-    monkeypatch.setattr("merval_agent.agents.report.now", lambda: AT)
-    monkeypatch.setattr("merval_agent.agents.equity_agent.now", lambda: AT)
-    agent, repo = make_agent(data=fixture_payload(case))
+    agent, repo = make_agent(data=fixture_payload(case), clock=lambda: AT)
     result = agent.run(case["input"])
     state = repo.records[0][0]
     saved = (case["input"], result.executive_summary)
@@ -60,12 +58,10 @@ def test_evaluation_does_not_replace_existing_results(tmp_path):
 
 
 @pytest.mark.parametrize("kind", ["full", "technical"])
-def test_explicit_full_report_guard_preserves_technical_evidence(make_agent, monkeypatch, kind):
+def test_explicit_full_report_guard_preserves_technical_evidence(make_agent, kind):
     from merval_agent.agents.report import build_report
 
-    monkeypatch.setattr("merval_agent.agents.report.now", lambda: AT)
-    monkeypatch.setattr("merval_agent.agents.equity_agent.now", lambda: AT)
-    agent, repo = make_agent(data=fixture_payload({}))
+    agent, repo = make_agent(data=fixture_payload({}), clock=lambda: AT)
     agent.run("Analiza técnicamente GGAL")
     state = repo.records[0][0]
     state.intent.analysis_type = kind
@@ -107,13 +103,11 @@ def test_every_dataset_axis_is_exercised():
         ("get_market_history", "EXTERNAL_SERVICE"),
     ],
 )
-def test_failed_refresh_never_retains_actionable_confidence(make_agent, monkeypatch, tool, code):
+def test_failed_refresh_never_retains_actionable_confidence(make_agent, tool, code):
     from merval_agent.agents.report import build_report
     from merval_agent.domain.models import ErrorInfo, ToolCall, ToolResult
 
-    monkeypatch.setattr("merval_agent.agents.report.now", lambda: AT)
-    monkeypatch.setattr("merval_agent.agents.equity_agent.now", lambda: AT)
-    agent, repo = make_agent(data=fixture_payload({}))
+    agent, repo = make_agent(data=fixture_payload({}), clock=lambda: AT)
     agent.run("Analiza técnicamente GGAL")
     state = repo.records[0][0]
     state.tool_calls.append(ToolCall(name=tool, arguments={"ticker": "GGAL"}))

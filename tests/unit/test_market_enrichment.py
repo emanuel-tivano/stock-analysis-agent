@@ -206,9 +206,7 @@ def test_old_history_and_disabled_enrichment_make_one_request(history_payload, q
     assert len(paths) == 1 and history.enrichment_status == "ineligible_history"
 
 
-def test_partial_rows_visible_in_report_and_quote_evidence(
-    history_payload, quote_payload, monkeypatch
-):
+def test_partial_rows_visible_in_report_and_quote_evidence(history_payload, quote_payload):
     history_payload["data"].append({"bad": "row"})
     history, _ = fetch(history_payload, quote_payload)
     state = AgentState(
@@ -219,8 +217,7 @@ def test_partial_rows_visible_in_report_and_quote_evidence(
         technical_data=history,
         technical_metrics=calculate(history.bars),
     )
-    monkeypatch.setattr("merval_agent.agents.report.now", lambda: CLOCK)
-    result = build_report(state, "Data", "Calculated", 7)
+    result = build_report(state, "Data", "Calculated", 7, reference_time=CLOCK)
     assert result.status == "ANSWER" and result.as_of == CLOCK.date()
     assert not result.data_quality.stale_data
     assert set(result.sources) == {history.source, history.quote.source}
@@ -228,9 +225,10 @@ def test_partial_rows_visible_in_report_and_quote_evidence(
     assert result.technical.evidence[1].metadata["provisional"]
     assert any("Volumen desconocido" in s for s in result.technical.limitations)
     assert any("provisional" in s for s in result.technical.limitations)
-    # A previously stored snapshot ages using its historical base too.
-    monkeypatch.setattr("merval_agent.agents.report.now", lambda: CLOCK + timedelta(days=7))
-    assert build_report(state, "Data", "Calculated", 7).data_quality.stale_data
+    # A deliberate later evaluation still uses the historical base for freshness.
+    assert build_report(
+        state, "Data", "Calculated", 7, reference_time=CLOCK + timedelta(days=7)
+    ).data_quality.stale_data
 
 
 def test_null_volume_is_explicit_but_invalid_prices_still_rejected(history_payload):
@@ -249,9 +247,7 @@ def test_snapshot_provenance_cannot_be_removed_or_mismatched(history_payload, qu
             MarketHistory.model_validate({**data, **update})
 
 
-def test_market_midnight_and_weekend_do_not_imply_closed_session(
-    history_payload, quote_payload, monkeypatch
-):
+def test_market_midnight_and_weekend_do_not_imply_closed_session(history_payload, quote_payload):
     history, _ = fetch(history_payload, quote_payload)
     state = AgentState(
         user_request="Tecnico GGAL",
@@ -262,15 +258,17 @@ def test_market_midnight_and_weekend_do_not_imply_closed_session(
         resolved_asset=AssetResolution(ticker="GGAL", confidence=1),
     )
     # Saturday: recent Wednesday snapshot remains provisional, no invented close/holiday calendar.
-    monkeypatch.setattr("merval_agent.agents.report.now", lambda: CLOCK + timedelta(days=3))
-    result = build_report(state, "Data", "Calculated", 7)
+    result = build_report(state, "Data", "Calculated", 7, reference_time=CLOCK + timedelta(days=3))
     assert result.status == "ANSWER" and not result.data_quality.stale_data
     assert result.technical.evidence[-1].metadata["provisional"]
     # UTC changed date, Buenos Aires has not: one calendar day since historical base.
-    monkeypatch.setattr(
-        "merval_agent.agents.report.now", lambda: datetime(2026, 9, 17, 1, tzinfo=UTC)
-    )
-    assert not build_report(state, "Data", "Calculated", 1).data_quality.stale_data
+    assert not build_report(
+        state,
+        "Data",
+        "Calculated",
+        1,
+        reference_time=datetime(2026, 9, 17, 1, tzinfo=UTC),
+    ).data_quality.stale_data
 
 
 def test_invalid_history_never_requests_quote(history_payload):
@@ -291,7 +289,7 @@ def test_invalid_history_never_requests_quote(history_payload):
 
 
 def test_provisional_snapshot_survives_api_and_trace(
-    history_payload, quote_payload, make_agent, monkeypatch, tmp_path
+    history_payload, quote_payload, make_agent, tmp_path
 ):
     from fastapi.testclient import TestClient
 
@@ -300,10 +298,9 @@ def test_provisional_snapshot_survives_api_and_trace(
     from merval_agent.memory.sqlite import SQLiteRepository
 
     history, _ = fetch(history_payload, quote_payload)
-    agent, _ = make_agent()
+    agent, _ = make_agent(clock=lambda: CLOCK)
     agent.tools.tools["get_market_history"].handler = lambda a, s: history.model_dump(mode="json")
     agent.repository = SQLiteRepository(str(tmp_path / "snapshot.sqlite3"))
-    monkeypatch.setattr("merval_agent.agents.report.now", lambda: CLOCK)
     with TestClient(create_app(agent=agent, settings=Settings(_env_file=None))) as client:
         response = client.post("/agent/run", json={"message": "Tecnico GGAL"})
     body = response.json()
@@ -317,3 +314,75 @@ def test_provisional_snapshot_survives_api_and_trace(
     snapshot = next(e["market_data"] for e in trace["events"] if "market_data" in e)
     assert snapshot["provisional"] and snapshot["enrichment_status"] == "appended"
     assert snapshot["quote_fetched_at"] == CLOCK.isoformat()
+    final_decision = next(
+        e
+        for e in trace["events"]
+        if e["event"] == "DECISION_MADE" and e["action"] == "FINAL_ANSWER"
+    )
+    assert final_decision["evaluated_at"] == CLOCK.isoformat()
+
+
+def test_quote_after_snapshot_evaluation_remains_invalid(
+    history_payload, quote_payload, make_agent
+):
+    history, _ = fetch(history_payload, quote_payload)
+    future = CLOCK + timedelta(seconds=1)
+    quote = history.quote.model_copy(update={"observed_at": future, "fetched_at": future})
+    history = history.model_copy(update={"quote": quote})
+    agent, repo = make_agent(clock=lambda: CLOCK)
+    agent.tools.tools["get_market_history"].handler = lambda a, s: history.model_dump(mode="json")
+
+    result = agent.run("Tecnico GGAL")
+
+    assert result.status == "ABSTAIN"
+    assert result.technical.assessment.status == "INVALID_DATA"
+    assert result.technical.assessment.freshness == "INVALID"
+    final_decision = next(
+        e
+        for e in repo.records[0][0].trace_events
+        if e["event"] == "DECISION_MADE" and e["action"] == "ABSTAIN"
+    )
+    assert final_decision["evaluated_at"] == CLOCK.isoformat()
+
+
+def test_one_reference_is_reused_by_decision_and_report(history_payload, quote_payload, make_agent):
+    history, _ = fetch(history_payload, quote_payload)
+    references = iter(CLOCK + timedelta(seconds=i) for i in (1, 2, 3))
+    clock_calls = []
+
+    def clock():
+        value = next(references)
+        clock_calls.append(value)
+        return value
+
+    agent, repo = make_agent(clock=clock)
+    agent.tools.tools["get_market_history"].handler = lambda a, s: history.model_dump(mode="json")
+
+    result = agent.run("Tecnico GGAL")
+    state = repo.records[0][0]
+
+    assert result.status == "ANSWER"
+    assert clock_calls == [
+        CLOCK + timedelta(seconds=1),
+        CLOCK + timedelta(seconds=2),
+        CLOCK + timedelta(seconds=3),
+    ]
+    assert state.technical_evaluated_at == clock_calls[-1]
+    assert result.technical.assessment == state.technical_assessment
+    final_decision = next(
+        e
+        for e in state.trace_events
+        if e["event"] == "DECISION_MADE" and e["action"] == "FINAL_ANSWER"
+    )
+    assert final_decision["evaluated_at"] == clock_calls[-1].isoformat()
+
+
+def test_default_agent_clock_runs_after_acquisition(make_agent):
+    agent, repo = make_agent()
+
+    result = agent.run("Tecnico GGAL")
+    state = repo.records[0][0]
+
+    assert result.status == "ANSWER"
+    assert state.technical_evaluated_at.tzinfo is not None
+    assert state.technical_evaluated_at >= state.technical_data.fetched_at

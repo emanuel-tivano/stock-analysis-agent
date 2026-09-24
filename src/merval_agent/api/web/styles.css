@@ -486,3 +486,14 @@ textarea {
     scroll-behavior: auto !important;
   }
 }
+/* Review controls reuse the existing palette and remain usable at narrow widths. */
+.review-editor { min-width: 0; border: 1px solid currentColor; border-radius: 8px; padding: 1rem; }
+.review-editor label { display: block; margin-block: .6rem; }
+.review-editor select, .review-editor textarea { width: 100%; max-width: 100%; font: inherit; }
+.review-editor select { padding: .5rem; }
+.review-editor fieldset { min-width: 0; }
+.review-check input { margin-inline-end: .5rem; }
+.review-controls { display: flex; flex-wrap: wrap; gap: .7rem; margin-block: 1rem; }
+.review-controls button { min-height: 44px; padding: .6rem 1rem; cursor: pointer; }
+.review-card :focus-visible { outline: 3px solid #008b98; outline-offset: 3px; }
+.review-card p { overflow-wrap: anywhere; white-space: pre-wrap; }

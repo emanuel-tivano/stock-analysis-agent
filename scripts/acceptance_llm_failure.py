@@ -3,7 +3,6 @@
 import json
 from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import patch
 
 import httpx
 from fastapi.testclient import TestClient
@@ -62,14 +61,10 @@ def main():
     )
     fixed = datetime(2026, 9, 16, 22, tzinfo=UTC)
     with httpx.Client(transport=httpx.MockTransport(handler)) as http:
-        agent = build_agent(config, http)
+        agent = build_agent(config, http, clock=lambda: fixed)
         agent.provider.sleeper = lambda _: None
         agent.provider.random_source = lambda: 0.5
-        with (
-            patch("merval_agent.agents.report.now", return_value=fixed),
-            patch("merval_agent.agents.equity_agent.now", return_value=fixed),
-            TestClient(create_app(agent=agent, settings=config)) as client,
-        ):
+        with TestClient(create_app(agent=agent, settings=config)) as client:
             response = client.post("/agent/run", json={"message": "Analiza técnicamente GGAL"})
         body = response.json()
         assert body["status"] == "ANSWER"

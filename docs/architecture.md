@@ -1,5 +1,14 @@
 # Arquitectura — Fase 1 y extensiones
 
+Extensión actual: [HITL persistente de informes](hitl-v1.md). Tras construir un borrador
+técnico válido, un pedido explícito de informe agrega una propuesta y pausa la ejecución.
+La misma transacción guarda análisis, snapshot y eventos. La reanudación va de API a
+`SQLiteRepository/ActionStore`: no vuelve al loop, al provider ni a las tools.
+`BEGIN IMMEDIATE`, compare-and-swap y claves únicas de decisión/publicación serializan
+las decisiones entre procesos. Aprobación, finalización local, eventos y respuesta
+idempotente se confirman juntos. Una interrupción antes del commit deja la acción pendiente.
+El reducer de observaciones no cambia: la revisión es un ciclo persistente separado.
+
 Estado actual y cambios de contratos: [análisis técnico v4](technical-v4.md).
 Antecedente: [análisis técnico v3](technical-v3.md).
 Las secciones de Fase 1/2A siguientes conservan contexto histórico donde se indica.
@@ -101,9 +110,9 @@ reordenar tools y ampliar el rango tras una observación insuficiente.
 - Fundamentales: extracción por tipo de documento, inputs verificados y funciones puras.
   Bancos FINANCIAL: ROE/ROA, capital, NPL, cobertura, eficiencia y P/BV; evitar ratios industriales
   aplicados mecánicamente. No se implementan ratios sin datos.
-- HITL: propuesta PendingAction con action_id y parámetros; PAUSED antes de todo efecto.
-  APPROVE autoriza exactamente la propuesta; MODIFY genera una propuesta nueva y REJECT
-  termina sin ejecutar. La ejecución futura deberá ser idempotente y auditable; aún no existe.
+- HITL: implementado para finalizar informes técnicos; ver la extensión enlazada arriba.
+  PENDING/MODIFIED requieren aprobación; APPROVED autoriza una versión exacta;
+  EXECUTED y REJECTED son terminales. No se implementan otros efectos externos.
 - API: reanudación conversacional, políticas de concurrencia y autenticación al publicar.
 
 ## Extensión implementada en Fase 2A

@@ -26,3 +26,13 @@ basis identifica histórico, quote provisional, política y fecha efectiva de lo
 generation distingue LLM_ORCHESTRATED, DETERMINISTIC_FALLBACK, SIMULATED y FAILED.
 El fallback de modelo es independiente de la salida determinista, requiere configuración
 explícita y queda registrado; los errores de structured output no se convierten en fallback.
+## HITL de informes
+
+FinalAnalysis y ChatResponse admiten PAUSED y pending_action como proyección segura:
+action_id UUID, tipo, estado, versión, ticker, as_of, resumen, propuesta editorial,
+acciones permitidas, trace_id y session_id. PendingAction del dominio está en actions.py;
+el antiguo contrato reservado de watchlist/alertas fue reemplazado, sin consumidores previos.
+POST /agent/actions/{action_id}/approve|modify|reject exige session_id, expected_version
+e idempotency_key; modify agrega changes (focus/include_sections/review_note).
+Un informe finalizado conserva FinalAnalysis y agrega publication; no cambia métricas.
+La autorización corresponde al humano mediante la API, nunca a AgentDecision del modelo.

@@ -37,13 +37,11 @@ class AdversarialNarrator(FakeLLMProvider):
         return proposal
 
 
-def test_124_api_numbers_signals_utf8_and_sqlite(make_agent, monkeypatch, tmp_path):
+def test_124_api_numbers_signals_utf8_and_sqlite(make_agent, tmp_path):
     payload = json.loads(
         (Path(__file__).parents[1] / "fixtures/technical_124.json").read_text(encoding="utf-8")
     )
-    monkeypatch.setattr("merval_agent.agents.report.now", lambda: AT)
-    monkeypatch.setattr("merval_agent.agents.equity_agent.now", lambda: AT)
-    agent, _ = make_agent(provider=AdversarialNarrator(), data=payload)
+    agent, _ = make_agent(provider=AdversarialNarrator(), data=payload, clock=lambda: AT)
     db_path = tmp_path / "unicode.sqlite3"
     agent.repository = SQLiteRepository(str(db_path))
     message = "Analiza técnicamente GGAL; señal y cotización"

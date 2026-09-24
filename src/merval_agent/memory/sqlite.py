@@ -4,9 +4,10 @@ from contextlib import closing
 from pathlib import Path
 
 from merval_agent.domain.models import AgentState, FinalAnalysis, now
+from merval_agent.memory.actions import ActionStore, insert_action, migrate_actions
 
 
-class SQLiteRepository:
+class SQLiteRepository(ActionStore):
     def __init__(self, path: str):
         self.path = path
         Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -18,8 +19,9 @@ class SQLiteRepository:
             columns = {row[1] for row in db.execute("PRAGMA table_info(analyses)")}
             if "events" not in columns:
                 db.execute("ALTER TABLE analyses ADD COLUMN events TEXT NOT NULL DEFAULT '[]'")
+            migrate_actions(db)
 
-    def save(self, state: AgentState, result: FinalAnalysis) -> None:
+    def save(self, state: AgentState, result: FinalAnalysis, *, pending_action=None) -> None:
         trace = []
         for event in state.trace_events:
             if event["event"] in ("TOOL_SUCCEEDED", "TOOL_FAILED"):
@@ -32,7 +34,7 @@ class SQLiteRepository:
                         "error": event["error"],
                     }
                 )
-        with closing(sqlite3.connect(self.path)) as db, db:
+        with closing(self._connection()) as db, db:
             db.execute(
                 "INSERT INTO analyses "
                 "(trace_id, session_id, timestamp, ticker, user_request, final_status, "
@@ -49,6 +51,8 @@ class SQLiteRepository:
                     json.dumps(state.trace_events),
                 ),
             )
+            if pending_action is not None:
+                insert_action(db, pending_action)
 
     def get_trace(self, trace_id: str) -> dict | None:
         """Read persisted events without returning the private request or free-text summary."""

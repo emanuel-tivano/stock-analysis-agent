@@ -4,6 +4,7 @@ from typing import Annotated, Any, Literal
 from uuid import uuid4
 
 from pydantic import (
+    AwareDatetime,
     BaseModel,
     BeforeValidator,
     ConfigDict,
@@ -356,8 +357,55 @@ class Generation(Model):
     warnings: list[str] = Field(default_factory=list)
 
 
+class EditorialOptions(Model):
+    focus: Literal["overview", "trend", "momentum", "risk"] = "overview"
+    include_sections: list[Literal["overview", "trend", "momentum", "risk"]] = Field(
+        default_factory=lambda: ["overview", "trend", "momentum", "risk"],
+        min_length=1,
+        max_length=4,
+    )
+    review_note: str = Field(default="", max_length=500)
+
+    @model_validator(mode="after")
+    def valid_sections(self):
+        if len(set(self.include_sections)) != len(self.include_sections):
+            raise ValueError("Sections must be unique")
+        if self.focus not in self.include_sections:
+            raise ValueError("Focus must be included")
+        if any(ord(c) < 32 and c not in "\n\t" for c in self.review_note):
+            raise ValueError("Control characters are not allowed")
+        return self
+
+
+class PendingActionResponse(Model):
+    action_id: str
+    action_type: Literal["FINALIZE_TECHNICAL_REPORT"] = "FINALIZE_TECHNICAL_REPORT"
+    status: Literal["PENDING", "MODIFIED", "APPROVED", "REJECTED", "EXECUTED"]
+    version: int = Field(ge=1)
+    summary: str
+    ticker: Ticker
+    as_of: date
+    proposed_payload: EditorialOptions
+    editable_fields: list[str] = Field(
+        default_factory=lambda: ["focus", "include_sections", "review_note"]
+    )
+    available_actions: list[Literal["approve", "modify", "reject"]]
+    trace_id: str
+    session_id: str
+
+
+class ReportPublication(Model):
+    action_id: str
+    approved_version: int = Field(ge=1)
+    snapshot_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    editorial: EditorialOptions
+    sections: dict[str, str]
+
+
 class FinalAnalysis(Model):
-    status: Literal["ANSWER", "CLARIFY", "ABSTAIN", "ERROR"]
+    status: Literal["ANSWER", "CLARIFY", "ABSTAIN", "ERROR", "PAUSED"]
+    pending_action: PendingActionResponse | None = None
+    publication: ReportPublication | None = None
     ticker: Ticker | None = None
     company_name: str | None = None
     analysis_type: Literal["technical", "fundamental", "full"]
@@ -385,18 +433,11 @@ class AgentState(Model):
     technical_data: MarketHistory | None = None
     technical_metrics: TechnicalMetrics | None = None
     technical_assessment: TechnicalAssessment | None = None
+    technical_evaluated_at: AwareDatetime | None = Field(default=None, exclude=True)
     financial_data: list[FinancialDocument] = Field(default_factory=list)
     methodology_evidence: list[Evidence] = Field(default_factory=list)
     missing_information: list[str] = Field(default_factory=list)
     errors: list[ErrorInfo] = Field(default_factory=list)
     trace_events: list[dict[str, Any]] = Field(default_factory=list, exclude=True)
     iteration_count: int = 0
-    status: Literal["RUNNING", "ANSWER", "CLARIFY", "ABSTAIN", "ERROR"] = "RUNNING"
-
-
-class PendingAction(Model):
-    action_id: str = Field(default_factory=lambda: str(uuid4()))
-    action: Literal["add_to_watchlist", "create_monitoring_alert"]
-    ticker: Ticker
-    parameters: dict[str, Any] = Field(default_factory=dict)
-    status: Literal["PAUSED", "APPROVE", "MODIFY", "REJECT"] = "PAUSED"
+    status: Literal["RUNNING", "ANSWER", "CLARIFY", "ABSTAIN", "ERROR", "PAUSED"] = "RUNNING"

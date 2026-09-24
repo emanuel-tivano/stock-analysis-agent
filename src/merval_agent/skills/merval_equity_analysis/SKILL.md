@@ -34,7 +34,15 @@ locales DEMO no son citas ni recuperación de Murphy/Graham. Para conclusiones a
 estos autores hacen falta fuentes verificadas; si faltan, abstenerse en esa dimensión.
 Un PDF listado no implica balance extraído. En Fase 1 la dimensión fundamental se abstiene
 de concluir sobre solidez o valoración. En bancos usar a futuro métricas bancarias, no filtros
-industriales como current ratio. No ejecutar efectos externos: futuras propuestas HITL quedan PAUSED.
+industriales como current ratio. No ejecutar efectos externos.
+
+Si el usuario pide explícitamente preparar, finalizar, publicar o confirmar un informe técnico,
+obtené evidencia y cálculos igual que en un análisis ordinario. No pidas al modelo que apruebe:
+el backend construye el borrador determinista y persiste FINALIZE_TECHNICAL_REPORT en PAUSED.
+La revisión humana posterior permite aprobar, modificar sólo presentación o rechazar. El modelo
+no recibe una herramienta de aprobación. Aprobar usa exclusivamente el snapshot persistido;
+modificar crea una versión pendiente sin cambiar evidencia; rechazar conserva auditoría.
+Un pedido técnico ordinario sigue respondiendo inmediatamente. CLARIFY no es HITL.
 
 Consultá [contratos](references/contracts.md) para decisiones y respuestas;
 [tools](references/tools.md) para selección y precondiciones;

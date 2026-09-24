@@ -52,7 +52,7 @@ def payload(bars):
 def make_agent(payload):
     clients = []
 
-    def factory(provider=None, market_status=200, data=None, max_steps=12):
+    def factory(provider=None, market_status=200, data=None, max_steps=12, clock=None):
         def handler(request):
             if request.url.path.endswith("/quote"):
                 return httpx.Response(503, json={"ok": False})
@@ -74,7 +74,9 @@ def make_agent(payload):
             BolsarClient(http, "https://bolsar.test"),
             LocalMethodologyRetriever(),
         )
-        return EquityAgent(provider or FakeLLMProvider(), registry, repo, max_steps), repo
+        return EquityAgent(
+            provider or FakeLLMProvider(), registry, repo, max_steps, clock=clock
+        ), repo
 
     yield factory
     for client in clients:

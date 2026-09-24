@@ -4,7 +4,6 @@ import json
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import patch
 
 import httpx
 from fastapi.testclient import TestClient
@@ -32,12 +31,8 @@ def main():
             market_tracker_base_url="https://market-fixture.test",
             database_path=str(Path(directory) / "acceptance.sqlite3"),
         )
-        agent = build_agent(config, http)
-        with (
-            patch("merval_agent.agents.report.now", return_value=AT),
-            patch("merval_agent.agents.equity_agent.now", return_value=AT),
-            TestClient(create_app(agent=agent, settings=config)) as client,
-        ):
+        agent = build_agent(config, http, clock=lambda: AT)
+        with TestClient(create_app(agent=agent, settings=config)) as client:
             health = client.get("/health")
             response = client.post("/agent/run", json={"message": "Analiza técnicamente GGAL"})
             assert health.status_code == response.status_code == 200

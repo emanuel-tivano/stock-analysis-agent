@@ -1,6 +1,8 @@
 # Merval Equity Analyst AI
 
-Estado actual: [auditoría integral del 17/09/2026](docs/audit-2026-09-17.md):
+Estado actual: [HITL de finalización de informes](docs/hitl-v1.md), con propuesta
+persistida, revisión editorial, aprobación/rechazo y continuación idempotente.
+Baseline de esta extensión: [auditoría integral del 17/09/2026](docs/audit-2026-09-17.md),
 665 tests aprobados, 4 opt-in omitidos y evaluación técnica Fake 33/33.
 El cierre de la V1 técnica está documentado en
 [cierre y evaluación de la V1 técnica](docs/technical-v1-closure.md).
@@ -103,6 +105,13 @@ python -m uvicorn merval_agent.api.app:app --host 127.0.0.1 --port 8000
 ```
 
 ## Interfaz web
+
+Para revisión humana, escribir **“Prepará un informe técnico de GGAL para revisión.”**.
+La respuesta `PAUSED` presenta Aprobar, Modificar y Rechazar. Modificar sólo permite
+enfoque, secciones y nota editorial; crea una nueva versión que todavía requiere aprobación.
+Aprobar finaliza localmente con la evidencia guardada, sin consultas nuevas a mercado o LLM.
+Rechazar conserva auditoría. No se realizan operaciones financieras ni envíos externos.
+El análisis ordinario continúa como `ANSWER`. [API, demo offline y garantías](docs/hitl-v1.md).
 
 Con la aplicación iniciada, abrir [http://127.0.0.1:8000/](http://127.0.0.1:8000/).
 No hace falta usar PowerShell, `curl`, Postman ni conocer el contrato JSON. La consulta se
@@ -297,10 +306,10 @@ PDFs, datos privados, caches y logs. Al iniciar la auditoría del 17/09/2026, `m
 limpio y coincidía con `origin/main` en `988e8449c0e91c28197c6cc4bbd7b82979c04765`;
 el informe distingue ese estado inicial de las correcciones posteriores.
 
-Fase 2: validar provider real y selección de tools, RAG privado con citas verificables,
-extracción acotada de balances y revisión humana, ratios por sector, evaluación de conclusiones,
-mejoras de sesiones y futura propuesta HITL. Los contratos `PendingAction` contemplan
-PAUSED → APPROVE/MODIFY/REJECT; no existe tool con efectos externos ejecutables.
+HITL implementado: `FINALIZE_TECHNICAL_REPORT`, con SQLite transaccional y control de
+versión. `session_id` valida pertenencia pero **no equivale a autenticación**. No hay
+efectos externos. Fundamentales, RAG, ratios por sector y memoria conversacional siguen
+fuera del alcance implementado; esta extensión no los habilita.
 
 ## Registro histórico — Fase 2A: validación de LLM real preparada
 

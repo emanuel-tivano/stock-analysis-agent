@@ -1,4 +1,5 @@
 import re
+from datetime import datetime
 
 from merval_agent.agents.intent import explicit_analysis_type, explicit_full_request
 from merval_agent.domain.models import (
@@ -14,7 +15,12 @@ from merval_agent.domain.technical_assessment import assess, narrative
 
 
 def build_report(
-    state: AgentState, summary: str, interpretation: str, stale_after_days: int
+    state: AgentState,
+    summary: str,
+    interpretation: str,
+    stale_after_days: int,
+    *,
+    reference_time: datetime | None = None,
 ) -> FinalAnalysis:
     history, metrics = state.technical_data, state.technical_metrics
     unsupported_full = (
@@ -59,7 +65,15 @@ def build_report(
         if history
         else []
     )
-    assessment = assess(history, metrics, now(), stale_after_days)
+    reference_time = reference_time or state.technical_evaluated_at or now()
+    if reference_time.tzinfo is None:
+        raise ValueError("reference_time must be timezone-aware")
+    if state.technical_assessment is not None and state.technical_evaluated_at == reference_time:
+        assessment = state.technical_assessment
+    else:
+        assessment = assess(history, metrics, reference_time, stale_after_days)
+        state.technical_assessment = assessment
+        state.technical_evaluated_at = reference_time
     stale = assessment.freshness == "STALE"
     enough = assessment.status in ("COMPLETE", "PARTIAL")
     technical = Dimension(status="NOT_REQUESTED" if kind == "fundamental" else "INSUFFICIENT_DATA")

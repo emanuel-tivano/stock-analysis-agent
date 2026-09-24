@@ -23,6 +23,11 @@ def main():
     if not trace["events"]:
         print("Legacy execution: only tool trace available.")
     for event in trace["events"] or trace["tool_trace"]:
+        if event.get("event", "").startswith("ACTION_"):
+            print(
+                f"HITL {event['event']} action={event['action_id']} version={event['version']} "
+                f"{event['transition']} actor={event['actor']} at={event['timestamp']}"
+            )
         if event.get("event") in ("LLM_SUCCEEDED", "LLM_FAILED", "DECISION_VALIDATION_FAILED"):
             print(
                 "LLM provider={provider} model={model} version={version} attempt={attempt} "

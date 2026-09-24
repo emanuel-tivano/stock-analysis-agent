@@ -1,3 +1,6 @@
+from collections.abc import Callable
+from datetime import datetime
+
 import httpx
 
 from merval_agent.adapters.bolsar import BolsarClient
@@ -46,7 +49,12 @@ def build_provider(settings: Settings, http: httpx.Client):
     return ModelFallbackProvider(primary, backup)
 
 
-def build_agent(settings: Settings, http: httpx.Client) -> EquityAgent:
+def build_agent(
+    settings: Settings,
+    http: httpx.Client,
+    *,
+    clock: Callable[[], datetime] | None = None,
+) -> EquityAgent:
     provider = build_provider(settings, http)
     tools = build_registry(
         ArgentinaMarketTrackerClient(
@@ -66,4 +74,5 @@ def build_agent(settings: Settings, http: httpx.Client) -> EquityAgent:
         settings.max_agent_steps,
         settings.stale_after_days,
         deterministic_fallback=settings.llm_deterministic_fallback,
+        clock=clock,
     )

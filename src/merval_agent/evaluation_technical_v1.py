@@ -6,7 +6,6 @@ import re
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch
 
 import httpx
 from fastapi.testclient import TestClient
@@ -285,12 +284,8 @@ def evaluate_case(case, output):
             BolsarClient(http, "https://bolsar.test"),
             LocalMethodologyRetriever(),
         )
-        agent = EquityAgent(FakeLLMProvider(), registry, repo)
-        with (
-            patch("merval_agent.agents.report.now", return_value=AT),
-            patch("merval_agent.agents.equity_agent.now", return_value=AT),
-            TestClient(create_app(agent=agent, settings=Settings.model_construct())) as client,
-        ):
+        agent = EquityAgent(FakeLLMProvider(), registry, repo, clock=lambda: AT)
+        with TestClient(create_app(agent=agent, settings=Settings.model_construct())) as client:
             response = client.post("/agent/run", json={"message": case["input"]})
             result = FinalAnalysis.model_validate(response.json())
         with sqlite3.connect(output / "trace.sqlite3") as db:
