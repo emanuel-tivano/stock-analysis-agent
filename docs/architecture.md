@@ -66,8 +66,10 @@ semántica del texto: la validación estructural no garantiza corrección financ
 ## Suficiencia y reportes
 
 `domain/technical_assessment.py` centraliza ventanas, suficiencia, vigencia y señales.
-El loop calcula assessment antes de cada decisión; la proyección del contexto lo entrega al
-LLM junto con métricas separadas. El reporte aplica las mismas reglas y redacta desde ellas.
+Después de cada cambio material en history/metrics, el loop captura un `evaluated_at` con un
+reloj inyectable y calcula el assessment antes de la siguiente decisión. La proyección del
+contexto entrega ese assessment al LLM junto con métricas separadas. El reporte reutiliza el
+mismo assessment y la misma referencia temporal en lugar de consultar otro reloj.
 No publica cifras ni conclusiones libres del LLM. No impone una secuencia nueva de tools.
 Mínimo parcial: precio y 15 observaciones; completo: todos los indicadores con ventanas
 hasta 50, sin filas descartadas. Volumen ausente no invalida los indicadores de precios.
@@ -78,6 +80,11 @@ Vigencia usa tolerancia calendario (7 días), respeta fines de semana y permite 
 feriados verificados en la función pura. No hay un calendario BYMA integrado ni certificación
 de cierres. `as_of` es la última observación; fetched_at sigue siendo recepción upstream.
 Una quote provisional nunca rejuvenece un histórico vencido.
+
+`observed_at`/`fetched_at` describen adquisición, `as_of` la fecha efectiva del mercado y
+`evaluated_at` el instante contra el que se evaluó el snapshot. `EvidenceSnapshot` persiste
+esa última referencia para que HITL no recalcule frescura al modificar o aprobar. Los
+timestamps de creación, decisión humana y persistencia siguen usando el reloj operativo real.
 
 ## Observabilidad y privacidad
 

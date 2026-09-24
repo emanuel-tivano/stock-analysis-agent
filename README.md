@@ -2,6 +2,11 @@
 
 Estado actual: [HITL de finalización de informes](docs/hitl-v1.md), con propuesta
 persistida, revisión editorial, aprobación/rechazo y continuación idempotente.
+La revalidación final offline/Fake del 24/09/2026 sobre el commit funcional
+`3818a508d732501bc8632e058633e76c57894181` obtuvo 726 tests aprobados, cuatro
+integraciones live/LLM opt-in omitidas y cero fallos; Ruff, formato, dependencias,
+ambos smokes, evaluación técnica 33/33, evaluación HITL 10/10 y JavaScript 8/8
+también aprobaron. El tag anotado `v1.0-tfi` identifica la versión entregable.
 Baseline de esta extensión: [auditoría integral del 17/09/2026](docs/audit-2026-09-17.md),
 665 tests aprobados, 4 opt-in omitidos y evaluación técnica Fake 33/33.
 El cierre de la V1 técnica está documentado en
@@ -112,6 +117,10 @@ enfoque, secciones y nota editorial; crea una nueva versión que todavía requie
 Aprobar finaliza localmente con la evidencia guardada, sin consultas nuevas a mercado o LLM.
 Rechazar conserva auditoría. No se realizan operaciones financieras ni envíos externos.
 El análisis ordinario continúa como `ANSWER`. [API, demo offline y garantías](docs/hitl-v1.md).
+
+La referencia `evaluated_at` se captura después de adquirir cada snapshot técnico y se
+conserva en el snapshot persistido. Assessment, decisión y reporte usan esa misma referencia;
+los timestamps operativos de propuesta y revisión continúan registrando sus instantes reales.
 
 Con la aplicación iniciada, abrir [http://127.0.0.1:8000/](http://127.0.0.1:8000/).
 No hace falta usar PowerShell, `curl`, Postman ni conocer el contrato JSON. La consulta se

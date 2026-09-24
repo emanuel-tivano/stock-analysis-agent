@@ -4,6 +4,39 @@
 
 Cierre: 18/09/2026. Existe backend ejecutable, persistencia SQLite, revisión web y continuidad después de reinicio. Aprobar, modificar y rechazar no son mocks. Los proveedores de entrada de las pruebas son Fake/fixtures: esta tarea no constituye evidencia de razonamiento de un LLM real ni de disponibilidad del mercado. No declara completo el TFI en su conjunto.
 
+## Revalidación final para entrega — 24/09/2026
+
+Se revalidó en modo **offline/Fake** el commit funcional
+`3818a508d732501bc8632e058633e76c57894181` antes del commit exclusivamente
+documental y del tag de entrega.
+
+| Control | Resultado observado |
+|---|---|
+| Suite Python | **726 passed, 4 skipped, 0 failed** |
+| Ruff check | PASS |
+| Ruff format --check | PASS, **119 archivos correctos** |
+| pip check | PASS |
+| Smoke API | PASS |
+| Smoke HITL | PASS |
+| Evaluación técnica | **33/33** |
+| Evaluación HITL | **10/10** |
+| Tests JavaScript | **8/8** |
+| Integraciones live/LLM | No ejecutadas; requieren opt-in |
+
+Los cuatro skips corresponden exclusivamente a dos integraciones live y dos integraciones
+con LLM real. El Fake verifica orquestación, contratos y regresiones deterministas; no acredita
+la calidad de razonamiento de un modelo real. El flujo HITL, sus transacciones SQLite,
+persistencia, API y UI sí son implementaciones reales ejercitadas con entradas offline.
+
+Cada snapshot técnico conserva su propio `evaluated_at`, capturado después de adquirir la
+evidencia que evalúa. Assessment, decisión y reporte reutilizan esa referencia. Modify,
+approve y publicación operan sobre el snapshot persistido: aprobar no consulta nuevamente
+mercado ni LLM y no recalcula frescura. Sus timestamps operativos permanecen independientes.
+
+RAG, arquitectura multiagente y análisis fundamental ejecutable permanecen fuera del alcance
+de esta versión. El tag anotado `v1.0-tfi` identifica la versión entregable una vez completado
+el flujo de verificación, push y publicación del tag.
+
 ## Baseline inspeccionada
 
 Antes de editar se revisaron modelos, contrato reservado PendingAction, EquityAgent, reducer, repository SQLite y migración de events, API/OpenAPI, presenter, assets web, tests, README, arquitectura y auditoría del 17/09/2026. No se encontraron AGENTS.md aplicables en el repositorio ni en sus ancestros consultados.
@@ -132,14 +165,14 @@ La pestaña conserva sólo session_id/action_id en sessionStorage. No usa localS
 
 Eventos: ACTION_PROPOSED, ACTION_PAUSED, ACTION_MODIFIED, ACTION_APPROVED, ACTION_REJECTED, ACTION_EXECUTED y ACTION_CONFLICT. Incluyen acción, trace, sesión, versión, transición, timestamp, outcome, actor categórico human/system, motivo categórico, hash de payload y hash de key cuando corresponde. No incluyen comentario libre, prompt, respuesta cruda, API key ni cookies. Las notas editoriales se conservan en la propuesta/historial, no en el evento sanitizado. `scripts/show_trace.py` agrega una línea legible HITL por transición.
 
-## Pruebas agregadas y resultados finales
+## Pruebas agregadas y resultados del cierre HITL del 18/09/2026
 
 - `tests/unit/test_hitl_domain.py`: 19 casos de intención explícita, hashing normalizado, límites y campos financieros prohibidos.
 - `tests/integration/test_hitl.py`: 37 casos de API, SQLite, migración, snapshots, timestamps, versiones, idempotencia, concurrencia, rollback, reinicio, errores y regresión del agente.
 - `tests/integration/test_hitl_web.py`: dos pruebas; una ejecuta las ocho pruebas Node y otra verifica contratos de seguridad/accesibilidad de assets.
 - `tests/web/hitl.test.cjs`: ocho pruebas contra el JavaScript real con un doble de DOM y fetch; sin librerías frontend añadidas. Node es opcional para instalar la app; si falta, pytest marca explícitamente esa prueba omitida.
 
-| Verificación final | Resultado |
+| Verificación del cierre HITL | Resultado histórico |
 |---|---|
 | Suite completa | **723 passed, 0 failed, 4 skipped, 2 warnings; 19,63 s** |
 | Integración | **120 passed, 0 failed, 4 skipped, 2 warnings; 11,65 s** |
@@ -160,6 +193,9 @@ Eventos: ACTION_PROPOSED, ACTION_PAUSED, ACTION_MODIFIED, ACTION_APPROVED, ACTIO
 | Servicios live o LLM real | **NOT_EVALUATED**, sin opt-in ni llamadas pagas |
 
 La suite conserva los 665 tests iniciales y suma 58 tests pytest. Las ocho pruebas Node están contenidas en uno de esos 58, no se suman de nuevo al total pytest. Los warnings y cuatro skips son los mismos de la línea base.
+
+Estas cifras 723/103 pertenecen al cierre HITL del 18/09/2026. El estado vigente para la
+entrega es la revalidación 726/119 documentada al comienzo de este archivo.
 
 La primera instalación `--no-deps` en el antiguo entorno `.venv-rc` detectó que faltaba tzdata y los smoke fallaron por ese motivo. Se instaló la dependencia existente mediante pip, se repitió pip check y ambos smoke aprobaron. La construcción/descarga necesitó permiso de red para PyPI; no se añadió ninguna dependencia al proyecto.
 
