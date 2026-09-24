@@ -36,6 +36,9 @@ class TechnicalDetails(Model):
     momentum: PresentedValue
     momentum_state: PresentedValue
     confirmation: PresentedValue
+    volume_confirmation: PresentedValue | None = None
+    volume_as_of: date | None = None
+    resolved_variant: str | None = None
     confidence: PresentedValue
     sample_size: int | None = None
     sample_size_display: str = "No disponible"

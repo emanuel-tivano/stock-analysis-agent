@@ -46,8 +46,14 @@ MOMENTUM_STATE_SHORT_LABELS = {
 
 CONFIRMATION_LABELS = {
     "ALIGNED": "Indicadores alineados",
-    "UNCONFIRMED": "Sin confirmación suficiente",
+    "UNCONFIRMED": "Sin alineación conjunta de los indicadores",
     "UNAVAILABLE": "Confirmación no disponible",
+}
+
+VOLUME_CONFIRMATION_LABELS = {
+    "CONFIRMED": "Confirma el movimiento de la última barra histórica",
+    "NOT_CONFIRMED": "Volumen disponible, sin confirmación",
+    "UNAVAILABLE": "Sin datos suficientes para evaluar volumen",
 }
 
 METRICS = (
@@ -174,12 +180,15 @@ def _presentation_warnings(
     if assessment.basis.quote_provisional or "provisional" in normalized:
         warnings.append(PROVISIONAL_WARNING)
     volume_unavailable = metrics.average_volume is None and "volumen" in normalized
-    if volume_unavailable or any(
-        phrase in normalized
-        for phrase in (
-            "volumen incompleto",
-            "volumen desconocido",
-            "confirmación por volumen no evaluable",
+    if assessment.volume_confirmation == "UNAVAILABLE" and (
+        volume_unavailable
+        or any(
+            phrase in normalized
+            for phrase in (
+                "volumen incompleto",
+                "volumen desconocido",
+                "confirmación por volumen no evaluable",
+            )
         )
     ):
         warnings.append(VOLUME_WARNING)
@@ -272,8 +281,20 @@ def present_analysis(result: FinalAnalysis) -> ChatResponse:
         MOMENTUM_STATE_SHORT_LABELS,
     )
     confirmation = translated(assessment.confirmation, CONFIRMATION_LABELS)
+    if assessment.confirmation == "UNCONFIRMED" and assessment.basis.quote_in_indicators:
+        confirmation.label = (
+            "Sin confirmación conjunta: los indicadores incluyen una quote provisional"
+        )
+        confirmation.short_label = confirmation.label
 
-    indicators = [_metric(key, label, getattr(metrics, key)) for key, label in METRICS]
+    indicators = [
+        _metric(
+            key,
+            "Variación 6M" if key == "change_percent" and assessment.basis.range == "6M" else label,
+            getattr(metrics, key),
+        )
+        for key, label in METRICS
+    ]
     rsi = next(item for item in indicators if item.key == "rsi14")
     rsi.summary = _rsi_summary(rsi, assessment)
 
@@ -298,6 +319,9 @@ def present_analysis(result: FinalAnalysis) -> ChatResponse:
         momentum=momentum,
         momentum_state=momentum_state,
         confirmation=confirmation,
+        volume_confirmation=translated(assessment.volume_confirmation, VOLUME_CONFIRMATION_LABELS),
+        volume_as_of=assessment.volume_as_of,
+        resolved_variant=assessment.basis.resolved_variant,
         confidence=confidence,
         sample_size=metrics.sample_size or None,
         sample_size_display=(

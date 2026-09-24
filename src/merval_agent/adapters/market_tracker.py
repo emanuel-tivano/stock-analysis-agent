@@ -86,6 +86,7 @@ def normalize_history(
             stale=meta.get("stale", False),
             currency=next(iter(currencies), None),
             discarded_rows=discarded,
+            resolved_variant=meta.get("resolvedVariant"),
         )
 
     except (KeyError, TypeError, ValueError, ValidationError) as exc:
@@ -291,6 +292,7 @@ class ArgentinaMarketTrackerClient:
             stale=history.stale,
             currency=history.currency,
             discarded_rows=history.discarded_rows,
+            resolved_variant=history.resolved_variant,
             quote=quote,
             enrichment_status="appended",
         )

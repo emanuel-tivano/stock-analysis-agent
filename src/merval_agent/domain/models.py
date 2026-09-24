@@ -115,6 +115,7 @@ class QuoteSnapshot(Model):
 
 
 class MarketHistory(Model):
+    resolved_variant: str | None = None
     ticker: Ticker
     range: HistoryRange
     bars: list[Bar]
@@ -188,6 +189,8 @@ class TechnicalSignal(Model):
 
 
 class IndicatorBasis(Model):
+    resolved_variant: str | None = None
+    range: HistoryRange | None = None
     history_as_of: date | None = None
     indicators_as_of: date | None = None
     history_fetched_at: datetime | None = None
@@ -225,6 +228,8 @@ class TechnicalAssessment(Model):
         "RECOVERY_FADING_BUT_BEARISH",
     ] = "UNAVAILABLE"
     confirmation: Literal["ALIGNED", "UNCONFIRMED", "UNAVAILABLE"] = "UNAVAILABLE"
+    volume_confirmation: Literal["CONFIRMED", "NOT_CONFIRMED", "UNAVAILABLE"] = "UNAVAILABLE"
+    volume_as_of: date | None = None
     completion_reasons: list[str] = Field(default_factory=list)
     basis: IndicatorBasis = Field(default_factory=IndicatorBasis)
     conclusion: Signal = "UNAVAILABLE"

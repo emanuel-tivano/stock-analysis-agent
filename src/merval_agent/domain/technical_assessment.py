@@ -87,6 +87,8 @@ def assess(
     quote = history.quote
     result.basis = IndicatorBasis(
         history_as_of=base_date,
+        resolved_variant=history.resolved_variant,
+        range=history.range,
         indicators_as_of=result.as_of,
         history_fetched_at=history.fetched_at,
         quote_as_of=quote.bar.date if quote else None,
@@ -288,8 +290,11 @@ def assess(
         else f"Volumen promedio {metrics.average_volume:.2f}; un promedio aislado no confirma dirección.",
     )
     # A local comparison, not a forecast. Never compare intraday volume to full bars.
-    window = history.bars[-21:]
-    if not included and len(window) == 21 and all(b.volume is not None for b in window):
+    historical_bars = history.bars[:-1] if included else history.bars
+    window = historical_bars[-21:]
+    if len(window) == 21 and all(b.volume is not None for b in window):
+        result.volume_as_of = window[-1].date
+        result.volume_confirmation = "NOT_CONFIRMED"
         baseline_volume = fmean(b.volume for b in window[:-1])
         latest_volume = window[-1].volume
         direction = "NEUTRAL"
@@ -301,6 +306,8 @@ def assess(
                 if window[-1].close < window[-2].close
                 else "NEUTRAL"
             )
+        if direction != "NEUTRAL":
+            result.volume_confirmation = "CONFIRMED"
         result.signals["volume"] = TechnicalSignal(
             signal=direction,
             explanation=(
@@ -311,13 +318,14 @@ def assess(
                     if direction != "NEUTRAL"
                     else "sin confirmación direccional. "
                 )
+                + f" Evaluación sobre histórico al {window[-1].date}; excluye la quote provisional. "
                 + "No certifica cierre de rueda ni anticipa precios."
             ),
         )
-    elif included or len(window) < 21:
+    else:
         result.signals["volume"] = TechnicalSignal(
             signal="UNAVAILABLE",
-            explanation="Confirmación por volumen no evaluable: barra provisional o menos de 21 observaciones.",
+            explanation="Confirmación por volumen no evaluable: se requieren 21 barras históricas con volumen conocido.",
         )
     if result.conclusion == "UNAVAILABLE":
         result.status, result.confidence = "INSUFFICIENT_DATA", "UNAVAILABLE"

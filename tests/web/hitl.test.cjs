@@ -31,7 +31,7 @@ function harness(initial = {}, fetcher = async () => {throw Error('unexpected fe
   };
   let sequence=0;
   const context = vm.createContext({document, sessionStorage:{getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)}, crypto:{randomUUID:()=>`opaque-key-${++sequence}`}, fetch:fetcher, URL, console});
-  vm.runInContext(source+'\nglobalThis.ui={renderAction,renderAgentMessage,submitMessage,recoverAction};',context);
+  vm.runInContext(source+'\nglobalThis.ui={renderAction,renderAgentMessage,submitMessage,recoverAction,renderTechnicalDetails};',context);
   return {ui:context.ui,ids,store,focused:()=>focused, elements:tag=>ids.messages.querySelectorAll(tag)};
 }
 const proposal=()=>({action_id:'action-opaque',session_id:'session-opaque',trace_id:'trace-opaque',ticker:'GGAL',as_of:'2026-09-17',version:1,status:'PENDING',summary:'<img onerror=alert(1)>',proposed_payload:{focus:'overview',include_sections:['overview','trend','momentum','risk'],review_note:''},available_actions:['approve','modify','reject']});
@@ -109,3 +109,19 @@ test('422 keeps pending action with a human error',async()=>{
   assert(h.elements('p').some(p=>p.textContent?.includes('modificación no es válida')));
   assert(h.elements('button').every(b=>!b.disabled));
 });
+
+for (const [code,label] of Object.entries({CONFIRMED:'Confirma el movimiento de la última barra histórica',NOT_CONFIRMED:'Volumen disponible, sin confirmación',UNAVAILABLE:'Sin datos suficientes para evaluar volumen'})) {
+  test(`volume ${code} renders separately with its own date`,()=>{
+    const h=harness();
+    h.ui.renderTechnicalDetails(h.ids.messages,{technical_details:{
+      trend:{label:'Bajista'},momentum:{label:'Bajista'},momentum_state:{label:'Bajista'},
+      confirmation:{label:'Sin confirmación conjunta'},confidence:{label:'Media'},
+      volume_confirmation:{code,label},volume_as_of:'2026-09-23',sample_size_display:'126',
+      trace_id:'trace',missing_indicators:{},warnings:[],signal_explanations:[]
+    }});
+    assert(h.elements('dt').some(n=>n.textContent==='Confirmación'));
+    assert(h.elements('dt').some(n=>n.textContent==='Confirmación por volumen al 23/09/2026'));
+    assert(h.elements('dd').some(n=>n.textContent===label));
+    assert(h.elements('dd').some(n=>n.textContent==='Sin confirmación conjunta'));
+  });
+}

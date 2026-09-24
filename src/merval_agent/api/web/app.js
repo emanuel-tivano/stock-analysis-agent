@@ -136,6 +136,12 @@ function renderTechnicalDetails(article, data) {
   addDetailRow(list, "Momentum", detail.momentum.label);
   addDetailRow(list, "Estado del momentum", detail.momentum_state.label);
   addDetailRow(list, "Confirmación", detail.confirmation.label);
+  if (detail.volume_confirmation) {
+    const date = detail.volume_as_of;
+    const suffix = typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date)
+      ? ` al ${date.slice(8, 10)}/${date.slice(5, 7)}/${date.slice(0, 4)}` : "";
+    addDetailRow(list, `Confirmación por volumen${suffix}`, detail.volume_confirmation.label);
+  }
   addDetailRow(list, "Confianza", detail.confidence.label);
   addDetailRow(list, "Tamaño de muestra", detail.sample_size_display);
   addDetailRow(list, "ID de ejecución", detail.trace_id);

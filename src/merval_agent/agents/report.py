@@ -87,7 +87,13 @@ def build_report(
         technical.narrative_origin = "deterministic"
         technical.status = assessment.conclusion if enough else assessment.status
         technical.limitations = [
-            "Precios según variante del proveedor; no se verificaron ajustes corporativos.",
+            (
+                "Serie histórica ajustada según la variante informada por el proveedor."
+                if history and history.resolved_variant == "ajustada"
+                else f"Variante de la serie histórica informada por el proveedor: {history.resolved_variant}."
+                if history and history.resolved_variant
+                else "Precios según variante del proveedor; no se verificaron ajustes corporativos."
+            ),
             "Confianza describe calidad de evidencia, no probabilidad de un pronóstico.",
             *assessment.warnings,
         ]
@@ -104,6 +110,8 @@ def build_report(
                         "fetched_at": history.fetched_at.isoformat(),
                         "as_of": str(historical_bars[-1].date) if historical_bars else None,
                         "currency": history.currency,
+                        "resolved_variant": history.resolved_variant,
+                        "range": history.range,
                         "discarded_rows": history.discarded_rows,
                         "enrichment_status": history.enrichment_status,
                     },
