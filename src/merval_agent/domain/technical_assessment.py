@@ -34,6 +34,11 @@ LABELS = {
 }
 
 
+def is_answerable(assessment: TechnicalAssessment | None) -> bool:
+    """Whether Python has enough verified evidence to publish technical signals."""
+    return assessment is not None and assessment.status in ("COMPLETE", "PARTIAL")
+
+
 def stale_date(
     last: date, today: date, grace_days: int, holidays: frozenset[date] = frozenset()
 ) -> bool:

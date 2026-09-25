@@ -22,7 +22,7 @@ from merval_agent.domain.technical_assessment import assess
 from merval_agent.memory.repository import AnalysisRepository
 from merval_agent.tools.registry import ToolRegistry
 
-from .decisions import validate_decision
+from .decisions import resolve_effective_terminal_action, validate_decision
 from .generation import describe_generation
 from .intent import explicit_analysis_type
 from .report import build_report
@@ -158,12 +158,18 @@ class EquityAgent:
                 consecutive_invalid = 0
                 if decision.intent:
                     state.intent = decision.intent
+                effective_action = decision.action
+                terminal_resolution = None
+                if decision.action != "CALL_TOOL":
+                    terminal_resolution = resolve_effective_terminal_action(decision.action, state)
+                    effective_action = terminal_resolution.effective_action
+                overridden = bool(terminal_resolution and terminal_resolution.override_reason)
                 if validated_provider:
-                    if decision.missing_information:
+                    if decision.missing_information and not overridden:
                         state.missing_information.append(
                             "El modelo indicó información faltante; revisar evidencia disponible."
                         )
-                else:
+                elif not overridden:
                     state.missing_information.extend(decision.missing_information)
                 event(
                     "DECISION_MADE",
@@ -178,6 +184,17 @@ class EquityAgent:
                     if state.technical_evaluated_at
                     else None,
                 )
+                if overridden:
+                    event(
+                        "TERMINAL_ACTION_OVERRIDDEN",
+                        state,
+                        proposed_action=terminal_resolution.proposed_action,
+                        effective_action=terminal_resolution.effective_action,
+                        override_reason=terminal_resolution.override_reason,
+                        assessment_status=state.technical_assessment.status
+                        if state.technical_assessment
+                        else None,
+                    )
                 if decision.action == "CALL_TOOL":
                     call = ToolCall(
                         name=decision.tool_name,
@@ -320,7 +337,7 @@ class EquityAgent:
                         "FINAL_ANSWER": "ANSWER",
                         "CLARIFY": "CLARIFY",
                         "ABSTAIN": "ABSTAIN",
-                    }[decision.action]
+                    }[effective_action]
                     summary, interpretation = decision.reason, decision.interpretation
                     if validated_provider:
                         # The report renders financial prose from Python assessment.
@@ -329,7 +346,7 @@ class EquityAgent:
                             "FINAL_ANSWER": "Evaluación técnica completada.",
                             "ABSTAIN": "No hay evidencia suficiente para completar el análisis solicitado.",
                             "CLARIFY": "Confirmá el ticker, instrumento BYMA y tipo de análisis; aclarar pedidos ambiguos o contradictorios.",
-                        }[decision.action]
+                        }[effective_action]
                         interpretation = ""
                 event("STATE_UPDATED", state, transition=f"RUNNING->{state.status}")
             except ValueError as exc:

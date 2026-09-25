@@ -1,6 +1,10 @@
-import re
 from datetime import datetime
 
+from merval_agent.agents.decisions import (
+    explicit_methodology_pending,
+    explicit_methodology_requested,
+    resolve_effective_terminal_action,
+)
 from merval_agent.agents.intent import explicit_analysis_type, explicit_full_request
 from merval_agent.domain.models import (
     AgentState,
@@ -11,7 +15,7 @@ from merval_agent.domain.models import (
     now,
 )
 from merval_agent.domain.technical import calculate
-from merval_agent.domain.technical_assessment import assess, narrative
+from merval_agent.domain.technical_assessment import assess, is_answerable, narrative
 
 
 def build_report(
@@ -75,7 +79,11 @@ def build_report(
         state.technical_assessment = assessment
         state.technical_evaluated_at = reference_time
     stale = assessment.freshness == "STALE"
-    enough = assessment.status in ("COMPLETE", "PARTIAL")
+    enough = is_answerable(assessment)
+    if state.status == "ABSTAIN":
+        safety_resolution = resolve_effective_terminal_action("ABSTAIN", state)
+        if safety_resolution.effective_action == "FINAL_ANSWER":
+            state.status = "ANSWER"
     technical = Dimension(status="NOT_REQUESTED" if kind == "fundamental" else "INSUFFICIENT_DATA")
     fundamental = Dimension(status="NOT_REQUESTED" if kind == "technical" else "INSUFFICIENT_DATA")
     missing = list(state.missing_information)
@@ -185,26 +193,18 @@ def build_report(
     # The model's choice to consult a methodology is not an explicit user demand
     # for an authoritative book interpretation. Keep that distinction independent
     # of whether the model fills the optional intent.methodology field.
-    explicit_methodology = bool(re.search(r"\b(?:murphy|graham)\b", state.user_request, re.I))
+    explicit_methodology = explicit_methodology_requested(state)
     if (state.intent.methodology or explicit_methodology) and not any(
         e.kind == "METHODOLOGY" for e in state.methodology_evidence
     ):
         missing.append("Fuentes metodológicas privadas indexadas y verificadas")
-    if explicit_methodology and not any(
-        e.kind == "METHODOLOGY" for e in state.methodology_evidence
-    ):
+    if explicit_methodology_pending(state):
         technical.limitations.append(
             "La lectura determinista no valida una interpretación atribuida a Murphy/Graham."
         )
         if kind != "fundamental":
             technical.status = "INSUFFICIENT_DATA"
-    if state.status == "ANSWER" and (
-        not enough
-        or (
-            explicit_methodology
-            and not any(e.kind == "METHODOLOGY" for e in state.methodology_evidence)
-        )
-    ):
+    if state.status == "ANSWER" and (not enough or explicit_methodology_pending(state)):
         state.status = "ABSTAIN"
         summary = "No hay evidencia suficiente para completar el análisis solicitado; se adjuntan los datos disponibles."
     if state.status == "ANSWER" and unsupported_full:
