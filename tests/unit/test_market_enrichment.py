@@ -46,6 +46,7 @@ def quote_payload():
         "market": "bCBA",
         "source": "live",
         "stale": False,
+        "fetchedAt": "2026-09-16T22:00:01.112547Z",
         "data": {
             "timestamp": "2026-09-16T16:59:51-03:00",
             "open": 120,
@@ -86,7 +87,11 @@ def test_new_quote_provisional_provenance_and_metrics(history_payload, quote_pay
     assert history.enrichment_status == "appended"
     assert history.quote.provisional and history.quote.mode == "live"
     assert history.quote.fetched_at == CLOCK
+    assert history.quote.received_at == CLOCK
+    assert history.quote.provider_fetched_at == CLOCK + timedelta(seconds=1, microseconds=112_547)
     assert history.fetched_at == datetime(2026, 9, 16, 12, tzinfo=UTC)
+    assert history.provider_fetched_at == datetime(2026, 9, 16, 12, tzinfo=UTC)
+    assert history.received_at == CLOCK
     assert "/quote?" in history.quote.source and "/history?" in history.source
     assert history.bars[-1].volume is None
     assert history.bars[-1].date == CLOCK.date()
@@ -308,12 +313,28 @@ def test_provisional_snapshot_survives_api_and_trace(
     assert body["as_of"] == "2026-09-16"
     assert body["technical"]["metrics"]["average_volume"] is None
     assert body["technical"]["metrics"]["sample_size"] == 21
+    assessment = body["technical"]["assessment"]
+    assert assessment["provider_fetched_at"] == "2026-09-16T12:00:00Z"
+    assert assessment["received_at"] == CLOCK.isoformat().replace("+00:00", "Z")
+    assert assessment["basis"]["history_provider_clock_skew_ms"] == -36_000_000
+    history_evidence = next(
+        e for e in body["technical"]["evidence"] if e["chunk_id"].endswith(":ohlcv")
+    )
+    assert history_evidence["metadata"]["received_at"] == CLOCK.isoformat()
     evidence = next(e for e in body["technical"]["evidence"] if e["chunk_id"].endswith(":quote"))
     assert evidence["metadata"]["provisional"]
     trace = agent.repository.get_trace(body["trace_id"])
     snapshot = next(e["market_data"] for e in trace["events"] if "market_data" in e)
     assert snapshot["provisional"] and snapshot["enrichment_status"] == "appended"
     assert snapshot["quote_fetched_at"] == CLOCK.isoformat()
+    assert snapshot["received_at"] == CLOCK.isoformat()
+    assert snapshot["provider_fetched_at"] == "2026-09-16T12:00:00+00:00"
+    assert snapshot["quote_provider_clock_skew_ms"] == pytest.approx(1112.547)
+    assessed = next(e for e in trace["events"] if e["event"] == "TECHNICAL_ASSESSED")
+    assert assessed["received_at"] == CLOCK.isoformat()
+    assert assessed["evaluated_at"] == CLOCK.isoformat()
+    assert assessed["provider_clock_skew_ms"] == -36_000_000
+    assert assessed["quote_provider_clock_skew_ms"] == pytest.approx(1112.547)
     final_decision = next(
         e
         for e in trace["events"]
@@ -327,7 +348,7 @@ def test_quote_after_snapshot_evaluation_remains_invalid(
 ):
     history, _ = fetch(history_payload, quote_payload)
     future = CLOCK + timedelta(seconds=1)
-    quote = history.quote.model_copy(update={"observed_at": future, "fetched_at": future})
+    quote = history.quote.model_copy(update={"observed_at": future, "received_at": future})
     history = history.model_copy(update={"quote": quote})
     agent, repo = make_agent(clock=lambda: CLOCK)
     agent.tools.tools["get_market_history"].handler = lambda a, s: history.model_dump(mode="json")
@@ -385,4 +406,4 @@ def test_default_agent_clock_runs_after_acquisition(make_agent):
 
     assert result.status == "ANSWER"
     assert state.technical_evaluated_at.tzinfo is not None
-    assert state.technical_evaluated_at >= state.technical_data.fetched_at
+    assert state.technical_evaluated_at >= state.technical_data.received_at

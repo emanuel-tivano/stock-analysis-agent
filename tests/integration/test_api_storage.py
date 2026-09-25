@@ -65,3 +65,16 @@ def test_api_terminal_contracts(make_agent):
             assert body["status"] == expected
             assert body["session_id"] == "contract" and body["trace_id"]
             assert "trace_events" not in body
+
+
+def test_uncatalogued_asset_flows_through_agent_run_and_chat(make_agent):
+    for endpoint in ("/agent/run", "/chat"):
+        agent, repo = make_agent(validation_quotes={"EDN": "Edenor"})
+        with TestClient(create_app(agent=agent)) as client:
+            response = client.post(endpoint, json={"message": "Analizá técnicamente EDN"})
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "ANSWER"
+        assert body["ticker"] == "EDN"
+        assert repo.records[0][0].resolved_asset.validation_method == "provider_quote"

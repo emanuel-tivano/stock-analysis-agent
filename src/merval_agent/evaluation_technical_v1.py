@@ -116,6 +116,29 @@ def fixture_transport(case):
                 return httpx.Response(200, content=b"not-json")
             return httpx.Response(case.get("http", 200), json=payload)
         if request.url.path.endswith("/quote"):
+            if case.get("id") == "out_of_scope":
+                return httpx.Response(
+                    200,
+                    json={
+                        "ok": True,
+                        "symbol": "AAPL",
+                        "market": "bCBA",
+                        "source": "live",
+                        "stale": False,
+                        "data": {
+                            "symbol": "AAPL",
+                            "market": "bCBA",
+                            "description": "Cedear Apple Inc.",
+                            "timestamp": AT.isoformat(),
+                            "open": 100,
+                            "price": 100,
+                            "high": 101,
+                            "low": 99,
+                            "volume": 100,
+                            "currency": "peso_Argentino",
+                        },
+                    },
+                )
             if not case.get("quote"):
                 return httpx.Response(503, json={"ok": False})
             quote_day = (
@@ -161,14 +184,21 @@ def score(case, state, result, registry, persisted, http_ok=True):
             registry.tools[c.name].args.model_validate(c.arguments)
         except (KeyError, ValueError):
             args_ok = False
-        expected = (
-            {"query": case["input"]}
-            if c.name == "resolve_asset"
-            else {"ticker": case.get("ticker", "GGAL"), "range": "6M"}
-            if c.name == "get_market_history"
-            else {"ticker": case.get("ticker", "GGAL")}
-        )
-        args_ok = args_ok and c.arguments == expected
+        if c.name == "resolve_asset":
+            allowed = {"query", "symbol", "market", "company_name"}
+            args_ok = args_ok and c.arguments.get("query") == case["input"]
+            args_ok = args_ok and set(c.arguments) <= allowed
+            if c.arguments.get("symbol"):
+                if case.get("ticker"):
+                    args_ok = args_ok and c.arguments["symbol"] == case["ticker"]
+                args_ok = args_ok and c.arguments.get("market") == "bCBA"
+        else:
+            expected = (
+                {"ticker": case.get("ticker", "GGAL"), "range": "6M"}
+                if c.name == "get_market_history"
+                else {"ticker": case.get("ticker", "GGAL")}
+            )
+            args_ok = args_ok and c.arguments == expected
     axes["tool_arguments"] = args_ok
     a = result.technical.assessment
     axes["classification"] = result.status == case["status"]
@@ -203,7 +233,9 @@ def score(case, state, result, registry, persisted, http_ok=True):
             and result.sources
             and result.technical.evidence
             and result.technical.evidence[0].metadata["currency"] == h.currency
-            and a.basis.history_fetched_at == h.fetched_at
+            and a.basis.history_fetched_at == h.provider_fetched_at
+            and a.basis.history_provider_fetched_at == h.provider_fetched_at
+            and a.basis.history_received_at == h.received_at
         )
         if case.get("enrichment"):
             axes["evidence"] &= h.enrichment_status == case["enrichment"]
@@ -216,11 +248,16 @@ def score(case, state, result, registry, persisted, http_ok=True):
             a and a.conflicts and a.conclusion == "MIXED" and "mixta" in result.executive_summary
         )
     if case["status"] == "ABSTAIN" or case.get("assessment") == "PARTIAL":
-        axes["insufficiency"] = result.status == case["status"] and bool(
-            result.data_quality.missing_information
-            or (a and a.missing_indicators)
-            or "integral" in result.executive_summary
-        )
+        if case.get("technical_status") == "UNSUPPORTED_ASSET":
+            axes["insufficiency"] = result.status == "ABSTAIN" and bool(
+                result.data_quality.abstentions
+            )
+        else:
+            axes["insufficiency"] = result.status == case["status"] and bool(
+                result.data_quality.missing_information
+                or (a and a.missing_indicators)
+                or "integral" in result.executive_summary
+            )
         if case.get("assessment") == "PARTIAL":
             axes["insufficiency"] = result.status == "ANSWER" and bool(
                 a.completion_reasons and result.technical.metrics

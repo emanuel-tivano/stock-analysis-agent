@@ -13,9 +13,11 @@ from pydantic import (
     model_validator,
 )
 
+TICKER_PATTERN = r"^(?:[A-Z]{2,5}|[A-Z]{1,4}[0-9])$"
+
 Ticker = Annotated[
     str,
-    StringConstraints(pattern=r"^[A-Z]{2,5}$"),
+    StringConstraints(pattern=TICKER_PATTERN),
     BeforeValidator(lambda v: v.strip().upper() if isinstance(v, str) else v),
 ]
 HistoryRange = Literal["1W", "1M", "3M", "6M", "1Y"]
@@ -43,13 +45,32 @@ class UserIntent(Model):
 
 
 class AssetResolution(Model):
-    status: Literal["RESOLVED", "AMBIGUOUS", "NOT_FOUND"] = "NOT_FOUND"
+    status: Literal["RESOLVED", "AMBIGUOUS", "NOT_FOUND", "UNSUPPORTED"] = "NOT_FOUND"
     ticker: Ticker | None = None
     company_name: str | None = None
     company_type: CompanyType = CompanyType.OTHER
+    market: Literal["bCBA"] | None = None
     confidence: float = Field(ge=0, le=1)
     alternatives: list[str] = Field(default_factory=list)
     requested_symbol: str | None = Field(default=None, max_length=30, pattern=r"^[A-Z0-9._-]+$")
+    validation_method: Literal["catalog", "provider_quote", "none"] = "none"
+    validation_status: Literal[
+        "VALIDATED",
+        "NOT_FOUND",
+        "UNSUPPORTED",
+        "AMBIGUOUS",
+        "INVALID_FORMAT",
+        "NOT_ATTEMPTED",
+    ] = "NOT_ATTEMPTED"
+    validation_source: str | None = None
+    existence_status: Literal["CONFIRMED", "NOT_FOUND", "NOT_VERIFIED"] = "NOT_VERIFIED"
+    eligibility_status: Literal["ELIGIBLE", "UNSUPPORTED", "NOT_EVALUATED"] = "NOT_EVALUATED"
+    eligibility_reason: (
+        Literal["DOMESTIC_EQUITY", "CEDEAR", "FOREIGN_MARKET", "OTHER_INSTRUMENT"] | None
+    ) = None
+    eligibility_method: Literal[
+        "catalog_metadata", "provider_description_policy", "request_market", "none"
+    ] = "none"
 
     @model_validator(mode="before")
     @classmethod
@@ -67,9 +88,9 @@ class AssetResolution(Model):
 
     @model_validator(mode="after")
     def valid_resolution(self):
-        if self.status == "RESOLVED" and self.ticker is None:
-            raise ValueError("RESOLVED asset requires ticker")
-        if self.status != "RESOLVED" and self.ticker is not None:
+        if self.status in ("RESOLVED", "UNSUPPORTED") and self.ticker is None:
+            raise ValueError("Identified asset requires ticker")
+        if self.status in ("AMBIGUOUS", "NOT_FOUND") and self.ticker is not None:
             raise ValueError("Unresolved asset cannot expose ticker")
         if self.status == "AMBIGUOUS" and not self.alternatives:
             raise ValueError("AMBIGUOUS asset requires alternatives")
@@ -102,16 +123,33 @@ class QuoteSnapshot(Model):
     bar: Bar
     source: str
     observed_at: datetime
-    fetched_at: datetime
+    provider_fetched_at: datetime | None = None
+    received_at: datetime
     currency: str = Field(min_length=1)
     mode: Literal["live"] = "live"
     provisional: Literal[True] = True
 
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_fetched_at(cls, value):
+        if isinstance(value, dict) and "fetched_at" in value:
+            value = dict(value)
+            legacy = value.pop("fetched_at")
+            value.setdefault("received_at", legacy)
+        return value
+
     @model_validator(mode="after")
     def aware(self):
-        if self.observed_at.tzinfo is None or self.fetched_at.tzinfo is None:
+        if self.observed_at.tzinfo is None or self.received_at.tzinfo is None:
             raise ValueError("Quote timestamps require timezone")
+        if self.provider_fetched_at and self.provider_fetched_at.tzinfo is None:
+            raise ValueError("Provider quote timestamp requires timezone")
         return self
+
+    @property
+    def fetched_at(self) -> datetime:
+        """Backward-compatible accessor; quote fetched_at always meant local receipt."""
+        return self.received_at
 
 
 class MarketHistory(Model):
@@ -120,7 +158,8 @@ class MarketHistory(Model):
     range: HistoryRange
     bars: list[Bar]
     source: str
-    fetched_at: datetime
+    provider_fetched_at: datetime
+    received_at: datetime
     mode: Literal["live", "demo", "unknown"] = "unknown"
     stale: bool = False
     currency: str | None = None
@@ -130,13 +169,23 @@ class MarketHistory(Model):
         "not_requested", "appended", "excluded", "not_newer", "unavailable", "ineligible_history"
     ] = "not_requested"
 
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_fetched_at(cls, value):
+        if isinstance(value, dict) and "fetched_at" in value:
+            value = dict(value)
+            legacy = value.pop("fetched_at")
+            value.setdefault("provider_fetched_at", legacy)
+            value.setdefault("received_at", legacy)
+        return value
+
     @model_validator(mode="after")
     def ordered(self):
         dates = [b.date for b in self.bars]
         if dates != sorted(set(dates)):
             raise ValueError("Bars must be unique and chronological")
-        if self.fetched_at.tzinfo is None:
-            raise ValueError("fetched_at requires timezone")
+        if self.provider_fetched_at.tzinfo is None or self.received_at.tzinfo is None:
+            raise ValueError("History timestamps require timezone")
         if (self.quote is not None) != (self.enrichment_status in ("appended", "excluded")):
             raise ValueError("Appended enrichment requires quote provenance")
         if (
@@ -160,6 +209,11 @@ class MarketHistory(Model):
         ):
             raise ValueError("Excluded quote must be newer and in the same currency")
         return self
+
+    @property
+    def fetched_at(self) -> datetime:
+        """Backward-compatible accessor for the former upstream fetched_at field."""
+        return self.provider_fetched_at
 
 
 class TechnicalMetrics(Model):
@@ -194,10 +248,16 @@ class IndicatorBasis(Model):
     history_as_of: date | None = None
     indicators_as_of: date | None = None
     history_fetched_at: datetime | None = None
+    history_provider_fetched_at: datetime | None = None
+    history_received_at: datetime | None = None
+    history_provider_clock_skew_ms: float | None = None
     history_closure: Literal["UNVERIFIED"] = "UNVERIFIED"
     quote_as_of: date | None = None
     quote_observed_at: datetime | None = None
     quote_fetched_at: datetime | None = None
+    quote_provider_fetched_at: datetime | None = None
+    quote_received_at: datetime | None = None
+    quote_provider_clock_skew_ms: float | None = None
     quote_price: float | None = None
     quote_provisional: bool = False
     quote_in_indicators: bool = False
@@ -236,6 +296,8 @@ class TechnicalAssessment(Model):
     confidence: Literal["HIGH", "MEDIUM", "LOW", "UNAVAILABLE"] = "UNAVAILABLE"
     as_of: date | None = None
     fetched_at: datetime | None = None
+    provider_fetched_at: datetime | None = None
+    received_at: datetime | None = None
     freshness: Literal["RECENT", "STALE", "INVALID", "UNKNOWN"] = "UNKNOWN"
     missing_indicators: dict[str, str] = Field(default_factory=dict)
     agreements: list[str] = Field(default_factory=list)
@@ -318,6 +380,7 @@ class Dimension(Model):
         "UNVERIFIED",
         "ASSET_NOT_FOUND",
         "AMBIGUOUS_ASSET",
+        "UNSUPPORTED_ASSET",
     ] = "INSUFFICIENT_DATA"
     metrics: TechnicalMetrics | None = None
     history_only_metrics: TechnicalMetrics | None = None
@@ -432,6 +495,8 @@ class AgentState(Model):
     trace_id: str = Field(default_factory=lambda: str(uuid4()))
     user_request: str
     resolved_asset: AssetResolution | None = None
+    asset_validation_quote: QuoteSnapshot | None = Field(default=None, exclude=True)
+    asset_validation_quote_attempted: bool = Field(default=False, exclude=True)
     intent: UserIntent = Field(default_factory=UserIntent)
     observations: list[ToolResult] = Field(default_factory=list)
     tool_calls: list[ToolCall] = Field(default_factory=list)

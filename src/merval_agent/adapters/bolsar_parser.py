@@ -8,7 +8,7 @@ from urllib.parse import parse_qs, urlparse
 from bs4 import BeautifulSoup
 
 from merval_agent.domain.errors import ExternalServiceError
-from merval_agent.domain.models import FinancialDocument
+from merval_agent.domain.models import TICKER_PATTERN, FinancialDocument
 
 
 def folded(value: str) -> str:
@@ -45,7 +45,7 @@ def parse_documents(html: str) -> list[FinancialDocument]:
             raise ExternalServiceError("Unexpected Bolsar row layout")
         link = cells[4].find("a", href=True)
         ticker = cells[2].get_text(strip=True).upper()
-        if not link or not re.fullmatch(r"[A-Z]{2,5}", ticker):
+        if not link or not re.fullmatch(TICKER_PATTERN, ticker):
             continue  # Issuers without a supported equity symbol are outside the catalog.
         ids = parse_qs(urlparse(link["href"]).query).get("id", [])
         match = re.search(r"\d{2}/\d{2}/\d{4}", cells[0].get_text(" "))

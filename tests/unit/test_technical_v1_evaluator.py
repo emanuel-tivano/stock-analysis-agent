@@ -16,7 +16,13 @@ from merval_agent.evaluation_technical_v1 import (
 
 
 def test_scenarios_contain_actual_recent_crosses():
-    h = normalize_history(fixture_payload({"pattern": "cross"}), "GGAL", "6M", "fixture://cross")
+    h = normalize_history(
+        fixture_payload({"pattern": "cross"}),
+        "GGAL",
+        "6M",
+        "fixture://cross",
+        received_at=AT,
+    )
     before, after = calculate(h.bars[:-1]), calculate(h.bars)
     assert before.ema12 < before.ema26 and after.ema12 > after.ema26
     assert before.macd < before.macd_signal and after.macd > after.macd_signal

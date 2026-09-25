@@ -78,20 +78,29 @@ def test_golden_trace(make_agent, tmp_path, message, market_status, status, tick
     else:
         expected = [("AGENT_STARTED", 0)]
         for step, tool in enumerate(tools, 1):
-            expected.extend(
-                [
-                    (name, step)
-                    for name in (
-                        "DECISION_MADE",
-                        "TOOL_STARTED",
-                        "TOOL_FAILED"
-                        if market_status != 200 and tool == "get_market_history"
-                        else "TOOL_SUCCEEDED",
-                        "STATE_UPDATED",
-                    )
-                ]
-            )
+            if (
+                market_status == 200
+                and step > 1
+                and tools[step - 2] in ("get_market_history", "calculate_technical_indicators")
+            ):
+                expected.append(("TECHNICAL_ASSESSED", step))
+            names = [
+                "DECISION_MADE",
+                "TOOL_STARTED",
+                "TOOL_FAILED"
+                if market_status != 200 and tool == "get_market_history"
+                else "TOOL_SUCCEEDED",
+            ]
+            if tool == "resolve_asset":
+                names.append("ASSET_RESOLVED")
+            names.append("STATE_UPDATED")
+            expected.extend([(name, step) for name in names])
         last = len(tools) + 1
+        if market_status == 200 and tools[-1] in (
+            "get_market_history",
+            "calculate_technical_indicators",
+        ):
+            expected.append(("TECHNICAL_ASSESSED", last))
         expected.extend(
             [(name, last) for name in ("DECISION_MADE", "STATE_UPDATED", "STATE_UPDATED")]
         )

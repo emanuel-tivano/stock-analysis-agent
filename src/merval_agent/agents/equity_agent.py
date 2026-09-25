@@ -18,7 +18,7 @@ from merval_agent.domain.models import (
     ToolResult,
     now,
 )
-from merval_agent.domain.technical_assessment import assess
+from merval_agent.domain.technical_assessment import assess, is_answerable
 from merval_agent.memory.repository import AnalysisRepository
 from merval_agent.tools.registry import ToolRegistry
 
@@ -119,6 +119,33 @@ class EquityAgent:
                 evaluated_at,
                 self.stale_after_days,
             )
+            if state.technical_data:
+                history = state.technical_data
+                quote = history.quote
+                event(
+                    "TECHNICAL_ASSESSED",
+                    state,
+                    assessment_status=state.technical_assessment.status,
+                    provider_fetched_at=history.provider_fetched_at.isoformat(),
+                    received_at=history.received_at.isoformat(),
+                    evaluated_at=evaluated_at.isoformat(),
+                    provider_clock_skew_ms=(
+                        history.provider_fetched_at - history.received_at
+                    ).total_seconds()
+                    * 1000,
+                    quote_observed_at=quote.observed_at.isoformat() if quote else None,
+                    quote_provider_fetched_at=(
+                        quote.provider_fetched_at.isoformat()
+                        if quote and quote.provider_fetched_at
+                        else None
+                    ),
+                    quote_received_at=quote.received_at.isoformat() if quote else None,
+                    quote_provider_clock_skew_ms=(
+                        (quote.provider_fetched_at - quote.received_at).total_seconds() * 1000
+                        if quote and quote.provider_fetched_at
+                        else None
+                    ),
+                )
             technical_snapshot_sha256 = snapshot_sha256
 
         while state.status == "RUNNING" and state.iteration_count < self.max_steps:
@@ -198,7 +225,7 @@ class EquityAgent:
                 if decision.action == "CALL_TOOL":
                     call = ToolCall(
                         name=decision.tool_name,
-                        arguments=normalized.model_dump(),
+                        arguments=normalized.model_dump(exclude_none=True),
                         step_number=state.iteration_count,
                     )
                     state.tool_calls.append(call)
@@ -213,6 +240,12 @@ class EquityAgent:
                                 k == "ticker"
                                 and state.resolved_asset
                                 and v == state.resolved_asset.ticker
+                            )
+                            or (call.name == "resolve_asset" and k == "symbol")
+                            or (
+                                call.name == "resolve_asset"
+                                and k == "market"
+                                and v.casefold() in ("bcba", "byma")
                             )
                         )
                     }
@@ -275,6 +308,13 @@ class EquityAgent:
                                     "quote_in_indicators": state.technical_data.enrichment_status
                                     == "appended",
                                     "fetched_at": state.technical_data.fetched_at.isoformat(),
+                                    "provider_fetched_at": state.technical_data.provider_fetched_at.isoformat(),
+                                    "received_at": state.technical_data.received_at.isoformat(),
+                                    "provider_clock_skew_ms": (
+                                        state.technical_data.provider_fetched_at
+                                        - state.technical_data.received_at
+                                    ).total_seconds()
+                                    * 1000,
                                     "enrichment_status": state.technical_data.enrichment_status,
                                     "discarded_rows": state.technical_data.discarded_rows,
                                     "provisional": state.technical_data.quote is not None,
@@ -284,6 +324,27 @@ class EquityAgent:
                                     "quote_fetched_at": state.technical_data.quote.fetched_at.isoformat()
                                     if state.technical_data.quote
                                     else None,
+                                    "quote_provider_fetched_at": (
+                                        state.technical_data.quote.provider_fetched_at.isoformat()
+                                        if state.technical_data.quote
+                                        and state.technical_data.quote.provider_fetched_at
+                                        else None
+                                    ),
+                                    "quote_received_at": (
+                                        state.technical_data.quote.received_at.isoformat()
+                                        if state.technical_data.quote
+                                        else None
+                                    ),
+                                    "quote_provider_clock_skew_ms": (
+                                        (
+                                            state.technical_data.quote.provider_fetched_at
+                                            - state.technical_data.quote.received_at
+                                        ).total_seconds()
+                                        * 1000
+                                        if state.technical_data.quote
+                                        and state.technical_data.quote.provider_fetched_at
+                                        else None
+                                    ),
                                     "snapshot_sha256": hashlib.sha256(
                                         state.technical_data.model_dump_json().encode()
                                     ).hexdigest(),
@@ -300,25 +361,64 @@ class EquityAgent:
                         result.success
                         and call.name == "resolve_asset"
                         and state.resolved_asset
+                        and state.resolved_asset.status == "RESOLVED"
+                    ):
+                        resolution = state.resolved_asset
+                        event(
+                            "ASSET_RESOLVED",
+                            state,
+                            proposed_symbol=call.arguments.get("symbol"),
+                            proposed_market=call.arguments.get("market"),
+                            ticker=resolution.ticker,
+                            market=resolution.market,
+                            validation_method=resolution.validation_method,
+                            validation_status=resolution.validation_status,
+                            validation_source=resolution.validation_source,
+                            existence_status=resolution.existence_status,
+                            eligibility_status=resolution.eligibility_status,
+                            eligibility_reason=resolution.eligibility_reason,
+                            eligibility_method=resolution.eligibility_method,
+                        )
+                    if (
+                        result.success
+                        and call.name == "resolve_asset"
+                        and state.resolved_asset
                         and state.resolved_asset.status != "RESOLVED"
                     ):
                         resolution = state.resolved_asset
-                        state.status = "CLARIFY"
-                        if resolution.status == "NOT_FOUND":
-                            requested = resolution.requested_symbol
+                        if resolution.status == "UNSUPPORTED":
+                            state.status = "ABSTAIN"
                             summary = (
-                                "No pude identificar ese activo. "
-                                + (
-                                    f"No encontré {requested} entre los instrumentos soportados actualmente. "
-                                    if requested
-                                    else "No encontré ese ticker o empresa entre los instrumentos soportados actualmente. "
+                                "El instrumento fue identificado, pero está fuera del universo "
+                                "de acciones domésticas argentinas soportado por este agente."
+                            )
+                        elif resolution.status == "NOT_FOUND":
+                            state.status = "CLARIFY"
+                            requested = resolution.requested_symbol
+                            if resolution.validation_status == "INVALID_FORMAT":
+                                summary = (
+                                    f"El símbolo propuesto {requested} no tiene un formato válido. "
+                                    "Verificá el ticker o ingresá el nombre de la empresa."
                                 )
-                                + "Verificá el ticker o ingresá el nombre de la empresa."
-                            )
-                            state.missing_information.append(
-                                "Ticker o nombre de empresa incluido en el universo soportado"
-                            )
+                                state.missing_information.append("Ticker con formato válido")
+                            elif resolution.validation_status == "NOT_FOUND":
+                                summary = (
+                                    f"El proveedor de mercado no encontró evidencia de {requested}. "
+                                    "Verificá el ticker o ingresá el nombre de la empresa."
+                                )
+                                state.missing_information.append(
+                                    "Ticker existente o nombre de empresa identificable"
+                                )
+                            else:
+                                summary = (
+                                    "No pude identificar un activo inequívoco. Indicá el ticker "
+                                    "o el nombre completo de la empresa."
+                                )
+                                state.missing_information.append(
+                                    "Ticker o nombre de empresa identificable"
+                                )
                         else:
+                            state.status = "CLARIFY"
                             summary = (
                                 "El activo es ambiguo. Indicá el ticker exacto o especificá el "
                                 "instrumento y mercado que querés analizar."
@@ -331,6 +431,15 @@ class EquityAgent:
                             reason=resolution.status,
                             requested_symbol=resolution.requested_symbol,
                             alternatives_count=len(resolution.alternatives),
+                            proposed_symbol=call.arguments.get("symbol"),
+                            proposed_market=call.arguments.get("market"),
+                            validation_method=resolution.validation_method,
+                            validation_status=resolution.validation_status,
+                            validation_source=resolution.validation_source,
+                            existence_status=resolution.existence_status,
+                            eligibility_status=resolution.eligibility_status,
+                            eligibility_reason=resolution.eligibility_reason,
+                            eligibility_method=resolution.eligibility_method,
                         )
                 else:
                     state.status = {
@@ -339,6 +448,26 @@ class EquityAgent:
                         "ABSTAIN": "ABSTAIN",
                     }[effective_action]
                     summary, interpretation = decision.reason, decision.interpretation
+                    resolution_provider_failure = next(
+                        (
+                            observation
+                            for observation in reversed(state.observations)
+                            if observation.tool_name == "resolve_asset"
+                        ),
+                        None,
+                    )
+                    if (
+                        resolution_provider_failure
+                        and not resolution_provider_failure.success
+                        and resolution_provider_failure.error
+                        and resolution_provider_failure.error.code == "EXTERNAL_SERVICE"
+                    ):
+                        state.status = "ERROR"
+                        summary = (
+                            "No se pudo verificar el instrumento por una falla del proveedor; "
+                            "no se lo clasificó como inexistente."
+                        )
+                        interpretation = ""
                     if validated_provider:
                         # The report renders financial prose from Python assessment.
                         # Model operational text is not verified financial evidence.
@@ -398,8 +527,7 @@ class EquityAgent:
                     and not re.search(r"\b(murphy|graham)\b", state.user_request, re.I)
                     and state.resolved_asset
                     and state.resolved_asset.ticker
-                    and state.technical_assessment
-                    and state.technical_assessment.status in ("COMPLETE", "PARTIAL")
+                    and is_answerable(state.technical_assessment)
                 ):
                     state.status = "ANSWER"
                     degraded = True
@@ -443,8 +571,7 @@ class EquityAgent:
             requests_review(message)
             and result.status == "ANSWER"
             and result.analysis_type == "technical"
-            and result.technical.assessment
-            and result.technical.assessment.status in ("COMPLETE", "PARTIAL")
+            and is_answerable(result.technical.assessment)
             and state.technical_data
         ):
             snapshot = EvidenceSnapshot(

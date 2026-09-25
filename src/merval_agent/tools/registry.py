@@ -24,6 +24,11 @@ from .operations import MAX_TOOL_ATTEMPTS, check_operation, operation_key, tool_
 
 class ResolveArgs(Model):
     query: str = Field(min_length=1, max_length=2000)
+    symbol: str | None = Field(
+        default=None, min_length=2, max_length=30, pattern=r"^[A-Za-z0-9._-]+$"
+    )
+    market: str | None = Field(default=None, min_length=2, max_length=20)
+    company_name: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class AssetArgs(Model):
@@ -141,6 +146,29 @@ class ToolRegistry:
 
 
 def build_registry(market, bolsar, retriever: MethodologyRetriever) -> ToolRegistry:
+    def resolve(args, state):
+        validation = None
+
+        def validate(symbol, proposed_market):
+            nonlocal validation
+            validation = market.validate_instrument(symbol, proposed_market)
+            return validation
+
+        resolution = resolve_asset(
+            args.query,
+            symbol=args.symbol,
+            market=args.market,
+            company_name=args.company_name,
+            validator=validate,
+        )
+        state.asset_validation_quote = (
+            validation.quote
+            if validation and validation.status == "VALIDATED" and resolution.status == "RESOLVED"
+            else None
+        )
+        state.asset_validation_quote_attempted = validation is not None
+        return resolution.model_dump(mode="json")
+
     def latest(args, state):
         document = bolsar.find_latest_financial_statement(args.ticker)
         return {
@@ -153,15 +181,24 @@ def build_registry(market, bolsar, retriever: MethodologyRetriever) -> ToolRegis
         [
             Tool(
                 "resolve_asset",
-                "Resolve a ticker/company in BYMA. Use before data tools; clarify ambiguous instruments.",
+                (
+                    "Propose and resolve a local Argentine equity. Supply the original query plus "
+                    "the interpreted symbol and market (canonical local market: bCBA). The proposal "
+                    "is validated by the application and is not evidence of existence."
+                ),
                 ResolveArgs,
-                lambda a, s: resolve_asset(a.query).model_dump(mode="json"),
+                resolve,
             ),
             Tool(
                 "get_market_history",
                 "Fetch OHLCV for technical analysis. Not for fundamental-only requests.",
                 HistoryArgs,
-                lambda a, s: market.get_history(a.ticker, a.range).model_dump(mode="json"),
+                lambda a, s: market.get_history(
+                    a.ticker,
+                    a.range,
+                    validated_quote=s.asset_validation_quote,
+                    quote_already_requested=s.asset_validation_quote_attempted,
+                ).model_dump(mode="json"),
             ),
             Tool(
                 "calculate_technical_indicators",

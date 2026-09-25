@@ -26,7 +26,7 @@ No hay suma de pesos numéricos ni doble voto del histograma. La precedencia es 
 | Variación del período | Contexto de toda la muestra; no vota la dirección actual. |
 | Volumen | Complementario. Un promedio aislado no confirma dirección; null significa no evaluable. |
 | Estado global | Predomina tendencia. MIXED si la propia tendencia discrepa, si RSI/MACD-cero direccionales se oponen a ella o si una tendencia neutral tiene momentum mixto. Sin tendencia disponible se usa el momentum de base. Los conflictos se enumeran con sus indicadores. |
-| Confirmación | ALIGNED requiere completitud, acuerdo de tendencia y momentum de base, relación MACD/señal compatible y ausencia de cotización provisional incorporada. En otro caso UNCONFIRMED; sin evidencia, UNAVAILABLE. Alineación no significa certeza predictiva. |
+| Confirmación | ALIGNED requiere completitud, acuerdo de tendencia y momentum de base y relación MACD/señal compatible. La provisionalidad se informa por separado y no cambia la alineación. En otro caso UNCONFIRMED; sin evidencia, UNAVAILABLE. Alineación no significa certeza predictiva. |
 
 `assessment.momentum` conserva la agregación anterior para consumidores existentes; la interpretación precisa está en `momentum_state`. `technical.status` expresa conclusión técnica; `assessment.status` expresa calidad/suficiencia. La narrativa se genera desde estas estructuras tipadas e incluye explicaciones individuales, conflictos y confirmación. El LLM no escribe ni modifica esos campos calculados.
 

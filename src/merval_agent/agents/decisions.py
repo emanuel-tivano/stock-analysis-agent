@@ -37,7 +37,7 @@ def resolve_effective_terminal_action(
         and explicit_analysis_type(state.user_request) != "technical"
     )
     if (
-        proposed_action == "ABSTAIN"
+        proposed_action in ("ABSTAIN", "CLARIFY")
         and state.intent.analysis_type == "technical"
         and not unsupported_full
         and is_answerable(state.technical_assessment)

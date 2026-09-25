@@ -160,6 +160,8 @@ def _metrics(result: FinalAnalysis) -> TechnicalMetrics:
 
 def _result_type(result: FinalAnalysis) -> str:
     statuses = {result.technical.status, result.fundamental.status}
+    if "UNSUPPORTED_ASSET" in statuses:
+        return "unsupported_asset"
     if "ASSET_NOT_FOUND" in statuses:
         return "asset_not_found"
     if "AMBIGUOUS_ASSET" in statuses:
@@ -255,15 +257,17 @@ def present_analysis(result: FinalAnalysis) -> ChatResponse:
             session_id=result.session_id,
         )
     result_type = _result_type(result)
-    if result_type in ("asset_not_found", "ambiguous_asset"):
+    if result_type in ("asset_not_found", "ambiguous_asset", "unsupported_asset"):
         return ChatResponse(
             status=result.status,
             result_type=result_type,
-            heading=(
-                "Activo no identificado"
-                if result_type == "asset_not_found"
-                else "Necesito que aclares el activo"
-            ),
+            heading={
+                "asset_not_found": "Activo no identificado",
+                "ambiguous_asset": "Necesito que aclares el activo",
+                "unsupported_asset": "Instrumento fuera de alcance",
+            }[result_type],
+            ticker=result.ticker,
+            company_name=result.company_name,
             user_message=result.executive_summary,
             executive_summary=result.executive_summary,
             trace_id=result.trace_id,
@@ -281,11 +285,6 @@ def present_analysis(result: FinalAnalysis) -> ChatResponse:
         MOMENTUM_STATE_SHORT_LABELS,
     )
     confirmation = translated(assessment.confirmation, CONFIRMATION_LABELS)
-    if assessment.confirmation == "UNCONFIRMED" and assessment.basis.quote_in_indicators:
-        confirmation.label = (
-            "Sin confirmación conjunta: los indicadores incluyen una quote provisional"
-        )
-        confirmation.short_label = confirmation.label
 
     indicators = [
         _metric(

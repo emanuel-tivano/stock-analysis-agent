@@ -12,7 +12,7 @@ from .models import (
     TechnicalMetrics,
     TechnicalSignal,
 )
-from .policy import MARKET_TIMEZONE
+from .policy import MARKET_TIMEZONE, MAX_PROVIDER_CLOCK_AHEAD
 
 WINDOWS = {
     "sma20": 20,
@@ -86,33 +86,65 @@ def assess(
         return result
     today = at.astimezone(MARKET_TIMEZONE).date()
     result.as_of = history.bars[-1].date
-    result.fetched_at = history.fetched_at
+    result.fetched_at = history.provider_fetched_at
+    result.provider_fetched_at = history.provider_fetched_at
+    result.received_at = history.received_at
     included = history.enrichment_status == "appended"
     base_date = history.bars[-2].date if included else result.as_of
     quote = history.quote
+    history_clock_skew_ms = (
+        history.provider_fetched_at - history.received_at
+    ).total_seconds() * 1000
+    quote_clock_skew_ms = (
+        (quote.provider_fetched_at - quote.received_at).total_seconds() * 1000
+        if quote and quote.provider_fetched_at
+        else None
+    )
     result.basis = IndicatorBasis(
         history_as_of=base_date,
         resolved_variant=history.resolved_variant,
         range=history.range,
         indicators_as_of=result.as_of,
-        history_fetched_at=history.fetched_at,
+        history_fetched_at=history.provider_fetched_at,
+        history_provider_fetched_at=history.provider_fetched_at,
+        history_received_at=history.received_at,
+        history_provider_clock_skew_ms=history_clock_skew_ms,
         quote_as_of=quote.bar.date if quote else None,
         quote_observed_at=quote.observed_at if quote else None,
         quote_fetched_at=quote.fetched_at if quote else None,
+        quote_provider_fetched_at=quote.provider_fetched_at if quote else None,
+        quote_received_at=quote.received_at if quote else None,
+        quote_provider_clock_skew_ms=quote_clock_skew_ms,
         quote_price=quote.bar.close if quote else None,
         quote_provisional=quote is not None,
         quote_in_indicators=included,
         policy="INCLUDE_PROVISIONAL_OHLC" if included else "HISTORY_ONLY",
     )
-    fetched_date = history.fetched_at.astimezone(MARKET_TIMEZONE).date()
+    received_date = history.received_at.astimezone(MARKET_TIMEZONE).date()
     if (
         result.as_of > today
-        or history.fetched_at > at
-        or base_date > fetched_date
-        or (quote and (quote.observed_at > quote.fetched_at or quote.fetched_at > at))
+        or history.received_at > at
+        or base_date > received_date
+        or (quote and (quote.observed_at > quote.received_at or quote.received_at > at))
     ):
         result.status, result.freshness = "INVALID_DATA", "INVALID"
         result.warnings.append("Fechas futuras o histórico posterior a su recepción.")
+        return result
+    if history.provider_fetched_at - history.received_at > MAX_PROVIDER_CLOCK_AHEAD:
+        result.status, result.freshness = "INVALID_DATA", "INVALID"
+        result.warnings.append(
+            "El reloj remoto del histórico excede la tolerancia de adelanto del proveedor."
+        )
+        return result
+    if (
+        quote
+        and quote.provider_fetched_at
+        and quote.provider_fetched_at - quote.received_at > MAX_PROVIDER_CLOCK_AHEAD
+    ):
+        result.status, result.freshness = "INVALID_DATA", "INVALID"
+        result.warnings.append(
+            "El reloj remoto de la cotización excede la tolerancia de adelanto del proveedor."
+        )
         return result
     stale = history.stale or stale_date(base_date, today, stale_after_days, holidays)
     result.freshness = "STALE" if stale else "RECENT"
@@ -266,7 +298,6 @@ def assess(
             and baseline == result.trend
             and relative in (result.trend, "NEUTRAL")
             and result.status == "COMPLETE"
-            and not included
         )
         else "UNCONFIRMED"
     )

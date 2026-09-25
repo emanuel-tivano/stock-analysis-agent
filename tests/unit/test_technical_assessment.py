@@ -2,7 +2,8 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
-from merval_agent.domain.models import Bar, MarketHistory
+from merval_agent.domain.models import Bar, MarketHistory, QuoteSnapshot
+from merval_agent.domain.policy import MAX_PROVIDER_CLOCK_AHEAD
 from merval_agent.domain.technical import calculate
 from merval_agent.domain.technical_assessment import assess, stale_date
 
@@ -21,7 +22,8 @@ def history(count=124, direction=1, last=date(2026, 9, 16)):
         ticker="GGAL",
         range="6M",
         source="fixture://technical-124",
-        fetched_at=AT,
+        provider_fetched_at=AT,
+        received_at=AT,
         mode="live",
         currency="ARS",
         bars=[
@@ -118,7 +120,7 @@ def test_nonfinite_metrics_invalid(value):
 
 
 @pytest.mark.parametrize(
-    "change", ["duplicate", "unordered", "future", "future_fetch", "old_fetch"]
+    "change", ["duplicate", "unordered", "future", "future_receipt", "history_after_receipt"]
 )
 def test_invalid_dates(change):
     h = history()
@@ -129,11 +131,75 @@ def test_invalid_dates(change):
         h.bars[1], h.bars[2] = h.bars[2], h.bars[1]
     if change == "future":
         h.bars[-1] = h.bars[-1].model_copy(update={"date": date(2026, 9, 17)})
-    if change == "future_fetch":
-        h.fetched_at = AT + timedelta(days=1)
-    if change == "old_fetch":
-        h.fetched_at = AT - timedelta(days=1)
+    if change == "future_receipt":
+        h.received_at = AT + timedelta(days=1)
+    if change == "history_after_receipt":
+        h.received_at = AT - timedelta(days=1)
     assert assess(h, m, AT).status == "INVALID_DATA"
+
+
+@pytest.mark.parametrize(
+    "ahead",
+    [
+        timedelta(microseconds=95_820),
+        timedelta(seconds=1, microseconds=112_547),
+        MAX_PROVIDER_CLOCK_AHEAD,
+    ],
+)
+def test_provider_clock_ahead_within_limit_is_accepted(ahead):
+    h = history()
+    h.provider_fetched_at = h.received_at + ahead
+    a = assess(h, calculate(h.bars), AT)
+    assert a.status == "COMPLETE"
+    assert a.basis.history_provider_clock_skew_ms == pytest.approx(ahead.total_seconds() * 1000)
+
+
+@pytest.mark.parametrize(
+    "ahead", [MAX_PROVIDER_CLOCK_AHEAD + timedelta(microseconds=1), timedelta(minutes=1)]
+)
+def test_provider_clock_ahead_over_limit_is_invalid(ahead):
+    h = history()
+    h.provider_fetched_at = h.received_at + ahead
+    a = assess(h, calculate(h.bars), AT)
+    assert a.status == "INVALID_DATA"
+    assert a.freshness == "INVALID"
+    assert "reloj remoto" in a.warnings[0]
+
+
+def test_old_provider_timestamp_is_valid_cache_age():
+    h = history()
+    h.provider_fetched_at = h.received_at - timedelta(days=1)
+    assert assess(h, calculate(h.bars), AT).status == "COMPLETE"
+
+
+def test_equivalent_timezone_instants_do_not_create_skew():
+    market_at = datetime.fromisoformat("2026-09-16T19:00:00-03:00")
+    h = history()
+    h.provider_fetched_at = market_at
+    a = assess(h, calculate(h.bars), market_at)
+    assert a.status == "COMPLETE"
+    assert a.basis.history_provider_clock_skew_ms == 0
+
+
+def test_quote_observed_after_local_receipt_is_invalid():
+    h = history(last=date(2026, 9, 15))
+    quote_bar = Bar(date=date(2026, 9, 16), open=120, high=121, low=119, close=120, volume=1000)
+    quote = QuoteSnapshot(
+        bar=quote_bar,
+        source="fixture://quote",
+        observed_at=AT + timedelta(microseconds=1),
+        provider_fetched_at=AT,
+        received_at=AT,
+        currency="ARS",
+    )
+    h = h.model_copy(
+        update={
+            "bars": [*h.bars, quote_bar],
+            "quote": quote,
+            "enrichment_status": "appended",
+        }
+    )
+    assert assess(h, calculate(h.bars), AT).status == "INVALID_DATA"
 
 
 def test_stale_and_demo_separate_from_insufficiency():

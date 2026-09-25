@@ -163,6 +163,10 @@ def test_ggal_agent_and_chat_offline_smoke(make_agent):
         details["volume_confirmation"]["label"]
         == "Confirma el movimiento de la última barra histórica"
     )
-    assert details["confirmation"]["code"] == "UNCONFIRMED"
-    assert "quote provisional" in details["confirmation"]["label"]
+    assert details["confirmation"] == {
+        "code": "UNCONFIRMED",
+        "label": "Sin alineación conjunta de los indicadores",
+        "short_label": "Sin alineación conjunta de los indicadores",
+    }
+    assert any("Datos provisionales" in warning for warning in human.json()["warnings"])
     assert a["basis"]["quote_provisional"] is True

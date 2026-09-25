@@ -58,7 +58,9 @@ def test_124_api_numbers_signals_utf8_and_sqlite(make_agent, tmp_path):
         assert report.technical.narrative_origin == "deterministic"
         from merval_agent.adapters.market_tracker import normalize_history
 
-        expected = calculate(normalize_history(payload, "GGAL", "6M", "fixture").bars)
+        expected = calculate(
+            normalize_history(payload, "GGAL", "6M", "fixture", received_at=AT).bars
+        )
         assert report.technical.metrics == expected
         raw = response.content.decode("utf-8", errors="strict")
         assert "999999" not in raw

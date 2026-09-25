@@ -150,7 +150,7 @@ def test_same_essential_data_same_completeness(discarded, status):
 def test_upstream_missing_volume_field_is_optional(payload):
     for row in payload["data"]:
         del row["volume"]
-    h = normalize_history(payload, "GGAL", "6M", "fixture://history")
+    h = normalize_history(payload, "GGAL", "6M", "fixture://history", received_at=AT)
     assert h.discarded_rows == 0
     assert all(b.volume is None for b in h.bars)
     assert calculate(h.bars).average_volume is None
@@ -159,7 +159,7 @@ def test_upstream_missing_volume_field_is_optional(payload):
 def test_observed_alua_ohlc_defect_explains_partial(payload):
     # Public /history observation: close exceeded high; volume was present.
     payload["data"][0].update(open=952.5, high=964, low=942, close=964.5, volume=980408)
-    h = normalize_history(payload, "GGAL", "6M", "fixture://same-rules-any-ticker")
+    h = normalize_history(payload, "GGAL", "6M", "fixture://same-rules-any-ticker", received_at=AT)
     assert h.discarded_rows == 1 and len(h.bars) == 59
 
 

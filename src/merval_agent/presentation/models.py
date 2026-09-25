@@ -55,6 +55,7 @@ class ChatResponse(Model):
         "successful_analysis",
         "asset_not_found",
         "ambiguous_asset",
+        "unsupported_asset",
         "insufficient_market_data",
         "other",
     ]

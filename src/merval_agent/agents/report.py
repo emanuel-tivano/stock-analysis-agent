@@ -34,7 +34,11 @@ def build_report(
     kind = "full" if unsupported_full else state.intent.analysis_type
     asset = state.resolved_asset
     if asset and asset.status != "RESOLVED":
-        resolution_status = "ASSET_NOT_FOUND" if asset.status == "NOT_FOUND" else "AMBIGUOUS_ASSET"
+        resolution_status = {
+            "NOT_FOUND": "ASSET_NOT_FOUND",
+            "AMBIGUOUS": "AMBIGUOUS_ASSET",
+            "UNSUPPORTED": "UNSUPPORTED_ASSET",
+        }[asset.status]
         technical = Dimension(
             status=resolution_status if kind != "fundamental" else "NOT_REQUESTED"
         )
@@ -44,6 +48,8 @@ def build_report(
         return FinalAnalysis(
             status=state.status,
             analysis_type=kind,
+            ticker=asset.ticker,
+            company_name=asset.company_name,
             executive_summary=summary,
             technical=technical,
             fundamental=fundamental,
@@ -80,8 +86,8 @@ def build_report(
         state.technical_evaluated_at = reference_time
     stale = assessment.freshness == "STALE"
     enough = is_answerable(assessment)
-    if state.status == "ABSTAIN":
-        safety_resolution = resolve_effective_terminal_action("ABSTAIN", state)
+    if state.status in ("ABSTAIN", "CLARIFY"):
+        safety_resolution = resolve_effective_terminal_action(state.status, state)
         if safety_resolution.effective_action == "FINAL_ANSWER":
             state.status = "ANSWER"
     technical = Dimension(status="NOT_REQUESTED" if kind == "fundamental" else "INSUFFICIENT_DATA")
@@ -116,6 +122,12 @@ def build_report(
                     metadata={
                         "mode": history.mode,
                         "fetched_at": history.fetched_at.isoformat(),
+                        "provider_fetched_at": history.provider_fetched_at.isoformat(),
+                        "received_at": history.received_at.isoformat(),
+                        "provider_clock_skew_ms": (
+                            history.provider_fetched_at - history.received_at
+                        ).total_seconds()
+                        * 1000,
                         "as_of": str(historical_bars[-1].date) if historical_bars else None,
                         "currency": history.currency,
                         "resolved_variant": history.resolved_variant,

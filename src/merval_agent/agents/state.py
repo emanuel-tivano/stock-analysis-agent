@@ -23,6 +23,9 @@ def reduce_observation(state: AgentState, result: ToolResult) -> None:
             state.technical_assessment = None
             state.financial_data = []
             state.methodology_evidence = []
+        if asset.status != "RESOLVED":
+            state.asset_validation_quote = None
+            state.asset_validation_quote_attempted = False
         state.resolved_asset = asset
     elif result.tool_name == "get_market_history":
         state.technical_data = MarketHistory.model_validate(result.data)

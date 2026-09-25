@@ -10,7 +10,8 @@ Otras variantes se muestran literalmente atribuidas al proveedor; sin metadata
 se conserva la nota cautelosa anterior.
 
 `technical.assessment.confirmation` conserva su contrato de alineación de
-indicadores. El nuevo `volume_confirmation` distingue `CONFIRMED`,
+indicadores y no incorpora la provisionalidad de la última observación, que se
+expone por separado en `basis` y como advertencia. El nuevo `volume_confirmation` distingue `CONFIRMED`,
 `NOT_CONFIRMED` y `UNAVAILABLE`, y se proyecta con etiquetas en
 `technical_details.volume_confirmation`. `volume_as_of` identifica la barra
 histórica evaluada, que puede diferir de la fecha de los indicadores de precios.

@@ -6,8 +6,18 @@ from merval_agent.tools.assets import resolve_asset
 
 
 def test_ticker_validation():
-    assert TypeAdapter(Ticker).validate_python(" ggal ") == "GGAL"
-    for value in ("../GGAL", "GGAL?x=1", "123", "TOOLONG"):
+    for value in ("GGAL", "TECO2", "TGNO4", "TGSU2", "A3"):
+        assert TypeAdapter(Ticker).validate_python(f" {value.lower()} ") == value
+    for value in (
+        "../GGAL",
+        "GGAL?x=1",
+        "123",
+        "TOOLONG",
+        "A",
+        "A33",
+        "T3CO2",
+        "TECO22",
+    ):
         with pytest.raises(ValidationError):
             TypeAdapter(Ticker).validate_python(value)
     assert resolve_asset("GGAL").company_type == "FINANCIAL"

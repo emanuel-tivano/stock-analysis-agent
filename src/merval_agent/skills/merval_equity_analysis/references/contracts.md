@@ -12,9 +12,12 @@ al usuario. ABSTAIN es falta de evidencia; ERROR es falla técnica. technical.st
 BULLISH/BEARISH/NEUTRAL/MIXED con datos utilizables. technical.assessment.status representa
 COMPLETE/PARTIAL/INSUFFICIENT_DATA/SOURCE_ERROR/STALE/INVALID_DATA/UNVERIFIED.
 INSUFFICIENT_DATA no significa neutralidad ni falta de RAG en pedidos técnicos ordinarios.
-AssetResolution distingue RESOLVED, AMBIGUOUS y NOT_FOUND. Los dos últimos detienen el loop
-antes de mercado y se publican como technical.status AMBIGUOUS_ASSET o ASSET_NOT_FOUND, con
-assessment ausente; no deben degradarse a INSUFFICIENT_DATA.
+AssetResolution distingue RESOLVED, AMBIGUOUS, NOT_FOUND y UNSUPPORTED, además de separar
+existencia y elegibilidad. Los tres resultados no resueltos detienen el loop antes de historia y
+se publican como technical.status AMBIGUOUS_ASSET, ASSET_NOT_FOUND o UNSUPPORTED_ASSET, con
+assessment ausente; no deben degradarse a INSUFFICIENT_DATA. El universo son acciones domésticas
+argentinas negociadas en BYMA (`bCBA`), no sólo integrantes del índice MERVAL. CEDEARs, ADRs,
+acciones extranjeras y otros instrumentos quedan fuera de alcance.
 metrics conserva cifras Python; assessment conserva señales, tendencia, momentum, confianza
 de evidencia y fechas; interpretation se redacta desde esas señales (narrative_origin=deterministic).
 
@@ -23,6 +26,9 @@ no confirma una reversión: la tendencia tiene precedencia en conclusion. MIXED 
 conflictos explícitos. confirmation=ALIGNED significa coincidencia de indicadores, no certeza.
 completion_reasons explica PARTIAL; volumen desconocido no lo causa, filas descartadas sí.
 basis identifica histórico, quote provisional, política y fecha efectiva de los indicadores.
+La procedencia temporal distingue `provider_fetched_at` (reloj remoto), `received_at` (reloj
+local al recibir) y `evaluated_at` (reloj local de evaluación). La guarda fuerte exige
+`received_at <= evaluated_at`; el skew remoto se evalúa aparte con la política centralizada.
 generation distingue LLM_ORCHESTRATED, DETERMINISTIC_FALLBACK, SIMULATED y FAILED.
 El fallback de modelo es independiente de la salida determinista, requiere configuración
 explícita y queda registrado; los errores de structured output no se convierten en fallback.

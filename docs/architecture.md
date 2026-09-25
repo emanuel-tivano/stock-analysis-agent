@@ -46,7 +46,27 @@ en acciones terminales. El registry valida argumentos y evita ticker diferente d
 herramientas fuera del alcance y cálculos sin historial. Cambiar intent después de ejecutar
 tools requiere una nueva solicitud; no se permite ampliar alcance silenciosamente.
 
-MarketHistory conserva barras cronológicas, fuente, fetched_at, mode, stale y moneda.
+La resolución de activos separa propuesta semántica, existencia y elegibilidad. El LLM propone;
+el catálogo acelera símbolos conocidos sin actuar como whitelist; los demás se confirman con la
+quote de Argentina Market Tracker. Los resultados terminales son `RESOLVED`, `NOT_FOUND`,
+`UNSUPPORTED`, `AMBIGUOUS` o una falla `EXTERNAL_SERVICE` de la tool. La traza conserva por separado
+`existence_status`, `eligibility_status`, motivo y método, de modo que un CEDEAR existente no se
+degrade a “no encontrado”.
+
+El alcance técnico es acciones domésticas argentinas negociadas en BYMA (`market=bCBA`), sin filtro
+por pertenencia al índice MERVAL/S&P Merval. “MERVAL” es nomenclatura histórica del proyecto. Se
+excluyen CEDEARs, ADRs, acciones extranjeras y otros tipos. El contrato de quote inspeccionado no
+ofrece tipo de instrumento estructurado: la clasificación queda marcada como política derivada de
+descripción e invariantes (`bCBA`, ARS, símbolo corto de letras con a lo sumo un dígito final,
+live/no-stale), no como metadata del
+proveedor. El prefijo normalizado `Cedear ` es evidencia determinística de exclusión. Cuando el
+texto comienza con marcadores de bono, obligación negociable, letra, opción, futuro, índice,
+fondo, ETF o cripto, también se excluye. Cuando el proveedor publique un tipo estructurado, esa
+señal debe tener precedencia sobre la descripción.
+
+MarketHistory conserva barras cronológicas, fuente, `provider_fetched_at`, `received_at`, mode,
+stale y moneda. El accessor legado `fetched_at` conserva el significado histórico de timestamp
+remoto, pero la validación nueva no lo confunde con el reloj local.
 TechnicalMetrics no recibe cifras del LLM: la tool toma el historial guardado en el estado.
 La variación usa primer y último cierre; extremos usan high/low, volumen usa media aritmética solo si todas las barras tienen volumen conocido; de otro modo es null.
 EMA se inicializa con SMA del período. MACD alinea EMA12 y EMA26 en la rueda 26 y calcula
@@ -78,17 +98,28 @@ Fundamental conserva su estado insuficiente; `NOT_REQUESTED` distingue lo no sol
 
 Vigencia usa tolerancia calendario (7 días), respeta fines de semana y permite inyectar
 feriados verificados en la función pura. No hay un calendario BYMA integrado ni certificación
-de cierres. `as_of` es la última observación; fetched_at sigue siendo recepción upstream.
+de cierres. `as_of` es la última observación; `provider_fetched_at` es el timestamp declarado
+por upstream y `received_at` la recepción capturada localmente.
 Una quote provisional nunca rejuvenece un histórico vencido.
 
-`observed_at`/`fetched_at` describen adquisición, `as_of` la fecha efectiva del mercado y
-`evaluated_at` el instante contra el que se evaluó el snapshot. `EvidenceSnapshot` persiste
+`observed_at` describe el instante de mercado de una quote, `provider_fetched_at` el reloj
+remoto, `received_at` la recepción local, `as_of` la fecha efectiva del mercado y
+`evaluated_at` el instante local contra el que se evaluó el snapshot. La invariante fuerte
+compara sólo el mismo reloj: `received_at <= evaluated_at`. La diferencia remota
+`provider_fetched_at - received_at` se registra como skew. `MAX_PROVIDER_CLOCK_AHEAD`, centralizada
+en `domain/policy.py`, admite hasta 2 segundos inclusive de adelanto remoto; más de 2 segundos
+produce `INVALID_DATA`. El valor cubre los desfases reales observados de 95,82 ms y 1,112547 s
+con el menor margen entero razonable. El presupuesto no se aplica a candles futuros, quotes
+observadas después de la recepción ni inconsistencias del reloj local. Un timestamp remoto más
+antiguo puede representar caché y no se invalida sólo por su edad.
+`EvidenceSnapshot` persiste
 esa última referencia para que HITL no recalcule frescura al modificar o aprobar. Los
 timestamps de creación, decisión humana y persistencia siguen usando el reloj operativo real.
 
 ## Observabilidad y privacidad
 
 Logging estándar JSON: AGENT_STARTED, DECISION_MADE, TOOL_STARTED, TOOL_SUCCEEDED,
+TECHNICAL_ASSESSED,
 TOOL_FAILED, STATE_UPDATED, AGENT_FINISHED / AGENT_ABSTAINED. Incluye trace_id, paso,
 acción, tool, argumentos categóricos sanitizados, latencia de tools, error y transición.
 No se loguean prompts, respuestas HTTP, API keys ni razones textuales libres del modelo.
@@ -150,8 +181,9 @@ Más detalles y evidencia de ejecución en [gemini-native.md](gemini-native.md).
 
 ## Enriquecimiento provisional y fallos técnicos (16/09/2026)
 
-MarketHistory.quote conserva barra, moneda, observed_at, fetched_at local, URL y provisional=true.
-El source/fetched_at superior siguen perteneciendo al histórico upstream. El reporte publica
+MarketHistory.quote conserva barra, moneda, `observed_at`, `provider_fetched_at` cuando el
+proveedor lo declara, `received_at` local, URL y `provisional=true`. El source y
+`provider_fetched_at` superiores pertenecen al histórico upstream. El reporte publica
 dos evidencias y as_of del último dato, sin presentarlo como cierre confirmado. Antigüedad
 en días calendario de Buenos Aires, tanto del histórico base como de la barra final.
 No hay calendario bursátil ni heurística por hora para certificar cierres.

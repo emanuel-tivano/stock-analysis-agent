@@ -64,7 +64,7 @@ def test_volume_confirms_observed_price_direction():
 
 def test_future_receipt_same_day_is_invalid():
     h = history()
-    h.fetched_at = AT + timedelta(minutes=1)
+    h.received_at = AT + timedelta(minutes=1)
     assert assess(h, calculate(h.bars), AT).status == "INVALID_DATA"
 
 

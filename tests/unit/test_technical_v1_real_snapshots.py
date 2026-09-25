@@ -45,6 +45,9 @@ def test_ggal_frozen_snapshot_calculation_and_assessment():
     assert history.discarded_rows == 0
     assert history.enrichment_status == "appended"
     assert history.quote is not None and history.quote.provisional
+    # Legacy persisted `fetched_at` snapshots migrate without changing their evidence.
+    assert history.provider_fetched_at == history.received_at
+    assert history.quote.received_at == history.quote.fetched_at
 
     metrics = calculate(history.bars)
     assert_metrics(
@@ -76,7 +79,7 @@ def test_ggal_frozen_snapshot_calculation_and_assessment():
     assert assessment.momentum_state == "BEARISH"
     assert assessment.conclusion == "BEARISH"
     assert assessment.confidence == "MEDIUM"
-    assert assessment.confirmation == "UNCONFIRMED"
+    assert assessment.confirmation == "ALIGNED"
     assert assessment.volume_confirmation == "CONFIRMED"
     assert assessment.volume_as_of == date(2026, 9, 23)
     assert assessment.basis.quote_in_indicators

@@ -18,6 +18,7 @@ from .models import (
     ReportPublication,
     now,
 )
+from .technical_assessment import is_answerable
 
 OpaqueKey = Annotated[
     str, StringConstraints(min_length=8, max_length=100, pattern=r"^[A-Za-z0-9_-]+$")
@@ -86,8 +87,7 @@ class EvidenceSnapshot(Model):
             or r.analysis_type != "technical"
             or r.pending_action is not None
             or r.publication is not None
-            or not r.technical.assessment
-            or r.technical.assessment.status not in ("COMPLETE", "PARTIAL")
+            or not is_answerable(r.technical.assessment)
             or not r.technical.metrics
             or r.ticker != self.history.ticker
             or r.as_of != self.history.bars[-1].date

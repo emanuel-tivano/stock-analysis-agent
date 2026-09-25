@@ -213,7 +213,7 @@ function renderAgentMessage(data) {
     article.append(warningBox);
   }
 
-  if (!["asset_not_found", "ambiguous_asset"].includes(data.result_type)) {
+  if (!["asset_not_found", "ambiguous_asset", "unsupported_asset"].includes(data.result_type)) {
     renderIndicators(article, data);
     renderSources(article, data);
     renderTechnicalDetails(article, data);

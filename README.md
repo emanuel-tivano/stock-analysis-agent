@@ -141,10 +141,36 @@ técnico completo necesario para tests, auditoría y debugging. También siguen 
 
 La UI conserva el `session_id` en la pestaña durante la conversación y “Nueva conversación”
 inicia otro agrupador. Esta versión **no reconstruye contexto ni resuelve follow-ups por
-memoria**: SQLite agrupa ejecuciones, pero cada consulta debe ser autocontenida. La cobertura
-de activos continúa limitada al catálogo actual y la disponibilidad del análisis depende de
-las fuentes externas configuradas. El provider por defecto es Fake para orquestación, pero
-los datos de mercado de la aplicación siguen siendo reales.
+memoria**: SQLite agrupa ejecuciones, pero cada consulta debe ser autocontenida. La
+disponibilidad del análisis depende de las fuentes externas configuradas. El provider por
+defecto es Fake para orquestación, pero los datos de mercado de la aplicación siguen siendo
+reales.
+
+### Universo de activos
+
+El universo funcional es **acciones domésticas argentinas negociadas en BYMA**, consultadas al
+proveedor con `market=bCBA`, para análisis técnico. No es una whitelist: el LLM propone símbolo,
+mercado y empresa; después el sistema valida existencia y elegibilidad de forma determinística.
+El catálogo interno es solamente una vía rápida para símbolos conocidos. Un símbolo ausente del
+catálogo puede resolverse si la quote del proveedor confirma identidad, mercado, moneda ARS y los
+invariantes de precio.
+
+Quedan fuera de alcance CEDEARs, ADRs, acciones extranjeras y otros instrumentos que no sean
+acciones domésticas. La API de quote de Argentina Market Tracker inspeccionada no expone un campo
+estructurado de tipo, categoría o `security_type`. Por eso no se inventa esa metadata: el adaptador
+registra una clasificación derivada y su método. Una descripción normalizada que comienza con
+`Cedear ` se rechaza como CEDEAR. También se rechazan descripciones que comienzan con marcadores
+de bono, obligación negociable, letra, opción, futuro, índice, fondo, ETF o cripto. Para candidatos
+locales se exige además un símbolo de 2–5 caracteres formado por 2–5 letras o por 1–4 letras y
+un único dígito final (por ejemplo `TECO2`, `TGNO4`, `TGSU2` y el borde `A3`), `bCBA`, ARS, quote
+live/no-stale e identidad coherente. La forma sintáctica no prueba existencia ni elegibilidad:
+ambas requieren la validación posterior. Esta es una política operativa sujeta al contrato actual del proveedor; si
+éste agrega tipo estructurado, debe reemplazar la heurística de descripción.
+
+“MERVAL” se conserva en el nombre histórico del proyecto y en algunos módulos, pero **no** significa
+“sólo integrantes del índice MERVAL/S&P Merval”. En este agente significa el mercado accionario
+doméstico argentino soportado bajo la política anterior; la pertenencia a un índice no se usa para
+aceptar ni rechazar activos.
 
 En otra consola:
 
@@ -164,9 +190,12 @@ Los tests utilizan `MockTransport` y no necesitan internet.
 parcial: datos técnicos disponibles y abstención fundamental. `technical.status` expresa la
 lectura BULLISH/BEARISH/NEUTRAL/MIXED cuando hay datos utilizables. `technical.assessment.status`
 separa COMPLETE, PARTIAL, INSUFFICIENT_DATA, SOURCE_ERROR, STALE, INVALID_DATA y UNVERIFIED.
-Una resolución fallida termina antes de consultar mercado: `technical.status=ASSET_NOT_FOUND`
-o `AMBIGUOUS_ASSET`, con `technical.assessment=null`. Así se distingue de un ticker soportado
-con historia insuficiente, que conserva `technical.status=INSUFFICIENT_DATA`.
+Una resolución que no habilita análisis termina antes de consultar historia: inexistencia produce
+`technical.status=ASSET_NOT_FOUND`, falta de desambiguación produce `AMBIGUOUS_ASSET` y un
+instrumento identificado pero fuera del universo produce `UNSUPPORTED_ASSET`; todos conservan
+`technical.assessment=null`. Así también se distinguen de un ticker elegible con historia
+insuficiente, que conserva `technical.status=INSUFFICIENT_DATA`. Las fallas del proveedor son
+`EXTERNAL_SERVICE`, nunca ausencia del activo.
 Un pedido técnico ordinario no requiere libros. Las solicitudes explícitas según Murphy/Graham
 se abstienen de atribuirles conclusiones mientras el retrieval sea demo.
 `fundamental.status=NOT_REQUESTED` indica que esa dimensión no se pidió.

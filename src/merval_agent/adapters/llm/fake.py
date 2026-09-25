@@ -3,9 +3,8 @@ from collections.abc import Callable
 
 from merval_agent.adapters.bolsar_parser import folded
 from merval_agent.agents.intent import explicit_analysis_type, explicit_full_request
-from merval_agent.domain.models import AgentDecision, AgentState, UserIntent
+from merval_agent.domain.models import TICKER_PATTERN, AgentDecision, AgentState, UserIntent
 from merval_agent.domain.policy import DEFAULT_TECHNICAL_RANGE
-from merval_agent.tools.assets import CATALOG
 
 
 class FakeLLMProvider:
@@ -33,17 +32,12 @@ class FakeLLMProvider:
                     confidence=1,
                     reason="El análisis integral requiere métricas fundamentales aún no implementadas; solicitá un análisis técnico.",
                 )
-            catalog_terms = {
-                term
-                for ticker, (_, _, aliases) in CATALOG.items()
-                for term in (ticker.lower(), *aliases)
-            }
             relevant = (
-                bool(re.fullmatch(r"[A-Z]{2,5}", state.user_request.strip()))
+                bool(re.fullmatch(TICKER_PATTERN, state.user_request.strip()))
                 or technical
                 or fundamental
                 or any(word in text for word in ("analiz", "analisis", "accion", "byma", "merval"))
-                or bool(set(re.findall(r"[a-z]+", text)) & catalog_terms)
+                or bool(re.search(r"\b(grupo|banco|energia|financiero|sociedad)\b", text))
             )
             if not relevant:
                 return AgentDecision(
@@ -67,7 +61,36 @@ class FakeLLMProvider:
             )
 
         if not state.observations:
-            return call("resolve_asset", query=state.user_request)
+            candidates = re.findall(r"(?<!\w)[A-Z][A-Z0-9]{1,4}(?!\w)", state.user_request)
+            candidates = [
+                value
+                for value in candidates
+                if value
+                not in {
+                    "ADR",
+                    "NYSE",
+                    "ARS",
+                    "USD",
+                    "ROE",
+                    "EPS",
+                    "FCF",
+                    "RSI",
+                    "SMA",
+                    "EMA",
+                    "MACD",
+                    "SYSTEM",
+                    "CALL",
+                    "TOOL",
+                }
+            ]
+            # Repeated-letter placeholders stay an offline negative case for the simulator.
+            candidates = [value for value in candidates if len(set(value)) > 1]
+            if "BYMA" in candidates and len(candidates) > 1:
+                candidates = [value for value in candidates if value != "BYMA"]
+            proposal = {"query": state.user_request}
+            if len(candidates) == 1:
+                proposal.update(symbol=candidates[-1], market="bCBA")
+            return call("resolve_asset", **proposal)
         if state.resolved_asset is None or state.resolved_asset.ticker is None:
             return AgentDecision(
                 action="CLARIFY",

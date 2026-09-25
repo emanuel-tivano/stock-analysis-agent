@@ -52,6 +52,45 @@ class MarketStub(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         if parsed.path.endswith("/quote"):
+            symbol = parsed.path.split("/")[-2]
+            if symbol in {"PPSA", "XYZINVALIDO"}:
+                body = json.dumps({"ok": False, "error": "QUOTE_NOT_FOUND"}).encode()
+                self.send_response(404)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if symbol in {"AAPL", "TECO2"}:
+                body = json.dumps(
+                    {
+                        "ok": True,
+                        "symbol": symbol,
+                        "market": "bCBA",
+                        "source": "live",
+                        "stale": False,
+                        "data": {
+                            "symbol": symbol,
+                            "market": "bCBA",
+                            "description": (
+                                "Cedear Apple Inc." if symbol == "AAPL" else "Telecom Argentina"
+                            ),
+                            "timestamp": datetime.now(UTC).isoformat(),
+                            "price": 100,
+                            "open": 99,
+                            "high": 101,
+                            "low": 98,
+                            "volume": 100,
+                            "currency": "peso_Argentino",
+                        },
+                    }
+                ).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             self.send_response(503)
             self.end_headers()
             return
@@ -138,6 +177,26 @@ def main():
                     assert unsupported_body["indicators"] == []
                     assert unsupported_body["technical_details"] is None
                 assert MarketStub.history_calls == 0
+                cedear = http.post("/chat", json={"message": "Analizá técnicamente AAPL"})
+                cedear.raise_for_status()
+                cedear_body = cedear.json()
+                assert cedear_body["status"] == "ABSTAIN"
+                assert cedear_body["result_type"] == "unsupported_asset"
+                assert cedear_body["ticker"] == "AAPL"
+                assert cedear_body["indicators"] == []
+                assert MarketStub.history_calls == 0
+                telecom = http.post(
+                    "/chat",
+                    json={
+                        "message": "Analizá técnicamente TECO2",
+                        "session_id": "smoke-web-teco2",
+                    },
+                )
+                telecom.raise_for_status()
+                telecom_body = telecom.json()
+                assert telecom_body["status"] == "ANSWER"
+                assert telecom_body["ticker"] == "TECO2"
+                assert MarketStub.history_calls == 1
                 for ticker in ("GGAL", "PAMP"):
                     response = http.post(
                         "/chat",
@@ -160,7 +219,7 @@ def main():
                     assert "MACD /" not in body["macd_summary"]
                     assert len(body["warnings"]) == len(set(body["warnings"]))
                     assert body["sources"]
-                assert MarketStub.history_calls == 2
+                assert MarketStub.history_calls == 3
                 MarketStub.sample_size = 10
                 insufficient = http.post(
                     "/chat",
@@ -189,8 +248,8 @@ def main():
                 assert legacy_body["generation"]
                 print(
                     "Uvicorn started; GET /, /health, /docs and asset=200; "
-                    "PPSA/XYZINVALIDO=asset_not_found with 0 market calls; "
-                    "GGAL/PAMP=ANSWER; short GGAL=insufficient_market_data; "
+                    "PPSA/XYZINVALIDO=asset_not_found and AAPL=unsupported_asset with 0 history calls; "
+                    "TECO2/GGAL/PAMP=ANSWER; short GGAL=insufficient_market_data; "
                     "POST /agent/run=200 ANSWER GGAL"
                 )
         finally:
