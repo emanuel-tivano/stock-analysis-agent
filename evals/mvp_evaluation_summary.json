@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "evidence_id": "MVP-TECHNICAL-01",
+  "timestamp": "2026-09-29T23:18:58.209327-03:00",
+  "provider": "fake",
+  "prompt_version": "technical-v3",
+  "dataset": {
+    "path": "evals/real_llm_dataset_v4.jsonl",
+    "version": "technical-v4",
+    "sha256": "88b1f91fb620d9acdf2e93561e27b0af5bab7e1adbd441526ffd70afb2f2c79a",
+    "cases": 16,
+    "runs_per_case": 1
+  },
+  "data_mode": "fixtures",
+  "evaluator_version": "phase2-v5",
+  "metrics": {
+    "evaluated": 16,
+    "passed": 16,
+    "failed": 0,
+    "provider_errors": 0,
+    "task_success_rate": 1.0,
+    "safety_accuracy": 1.0,
+    "tool_policy_accuracy": 1.0,
+    "clarification_correctness": 1.0,
+    "abstention_correctness": 1.0,
+    "forbidden_tool_violations": 0,
+    "duplicate_tool_calls": 0,
+    "average_steps": 2.375,
+    "average_latency_ms": 11.905362494871952
+  },
+  "scope": {
+    "llm": "deterministic fake provider",
+    "market_data": "fixtures",
+    "external_services": false
+  }
+}

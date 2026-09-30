@@ -1,0 +1,101 @@
+import sqlite3
+from uuid import uuid4
+
+from fastapi.testclient import TestClient
+from psycopg import DatabaseError
+
+from merval_agent.api.app import create_app
+from merval_agent.config import Settings
+from merval_agent.memory.sqlite import SQLiteRepository
+
+
+def test_api_lifespan_health_and_run(make_agent, tmp_path):
+    agent, _ = make_agent()
+    agent.repository = SQLiteRepository(str(tmp_path / "sessions.sqlite3"))
+    with TestClient(create_app(agent=agent)) as client:
+        assert client.get("/health").json()["status"] == "ok"
+        response = client.post(
+            "/agent/run", json={"message": "Técnico GGAL", "session_id": "session-1"}
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "ANSWER"
+        assert body["session_id"] == "session-1"
+        assert client.post("/agent/run", json={"message": ""}).status_code == 422
+        assert client.post("/agent/run", json={"message": "  "}).status_code == 422
+        client.post("/agent/run", json={"message": "Galicia", "session_id": "session-1"})
+    with sqlite3.connect(tmp_path / "sessions.sqlite3") as db:
+        rows = db.execute(
+            "SELECT final_status, tool_trace FROM analyses ORDER BY timestamp"
+        ).fetchall()
+        assert len(rows) == 2
+        assert rows[0][0] == "ANSWER"
+        assert "get_market_history" in rows[0][1]
+
+
+def test_default_composition_starts_without_network(tmp_path):
+    with TestClient(
+        create_app(
+            settings=Settings(llm_provider="fake", database_path=str(tmp_path / "db.sqlite3"))
+        )
+    ) as client:
+        assert client.get("/health").status_code == 200
+        assert client.post("/agent/run", json={"message": "XXXX"}).json()["status"] == "CLARIFY"
+
+
+def test_api_terminal_contracts(make_agent):
+    from merval_agent.adapters.llm.fake import FakeLLMProvider
+    from merval_agent.domain.errors import ExternalServiceError
+
+    def failure(state):
+        raise ExternalServiceError("private")
+
+    cases = [
+        (None, 200, "technical GGAL", "ANSWER"),
+        (None, 200, "XXXX", "CLARIFY"),
+        (None, 503, "technical GGAL", "ERROR"),
+        (FakeLLMProvider(failure), 200, "GGAL", "ERROR"),
+    ]
+    for provider, code, message, expected in cases:
+        agent, _ = make_agent(provider=provider, market_status=code)
+        with TestClient(create_app(agent=agent)) as client:
+            response = client.post(
+                "/agent/run", json={"message": message, "session_id": "contract"}
+            )
+            assert response.status_code == 200
+            body = response.json()
+            assert body["status"] == expected
+            assert body["session_id"] == "contract" and body["trace_id"]
+            assert "trace_events" not in body
+
+
+def test_uncatalogued_asset_flows_through_agent_run_and_chat(make_agent):
+    for endpoint in ("/agent/run", "/chat"):
+        agent, repo = make_agent(validation_quotes={"EDN": "Edenor"})
+        with TestClient(create_app(agent=agent)) as client:
+            response = client.post(endpoint, json={"message": "Analizá técnicamente EDN"})
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "ANSWER"
+        assert body["ticker"] == "EDN"
+        assert repo.records[0][0].resolved_asset.validation_method == "provider_quote"
+
+
+def test_postgres_failure_is_reported_as_storage_unavailable(make_agent):
+    class FailingRepository:
+        def get_action(self, action_id, session_id):
+            raise DatabaseError("private database failure")
+
+    agent, _ = make_agent()
+    agent.repository = FailingRepository()
+    app = create_app(agent=agent, settings=Settings(_env_file=None))
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.get(
+            f"/agent/actions/{uuid4()}", params={"session_id": "production-session"}
+        )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "No se pudo guardar la decisión. Reintentá con la misma clave."
+    }

@@ -1,0 +1,26 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.env
+*.sqlite*
+data/private/
+/*.pdf
+dist/
+build/
+
+
+*.db
+*.db-*
+*.log
+logs/
+.env.*
+!.env.example
+*.pdf
+.venv*/
+
+# Local evaluation artifacts may contain model identifiers and external data.
+evals/results/*
+!evals/results/.gitkeep
