@@ -8,3 +8,6 @@ docs/
 evals/results/
 tests/
 *.sqlite*
+.env
+.env.*
+!.env.example

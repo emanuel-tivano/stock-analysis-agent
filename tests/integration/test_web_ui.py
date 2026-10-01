@@ -12,15 +12,20 @@ def test_root_and_static_assets_are_served(make_agent):
         page = client.get("/")
         css = client.get("/assets/styles.css")
         script = client.get("/assets/app.js")
+        favicon = client.get("/assets/favicon.svg")
 
-    assert page.status_code == css.status_code == script.status_code == 200
+    assert page.status_code == css.status_code == script.status_code == favicon.status_code == 200
     assert "Stock Analysis Agent" in page.text
     assert 'aria-live="polite"' in page.text
     assert 'id="conversation"' in page.text
     assert 'class="conversation is-empty"' in page.text
     assert 'data-state="empty"' in page.text
+    assert 'href="/assets/favicon.svg"' in page.text
+    assert "No ingreses datos personales o sensibles" in page.text
+    assert 'aria-describedby="message-help privacy-note"' in page.text
     assert "text/css" in css.headers["content-type"]
     assert "javascript" in script.headers["content-type"]
+    assert "image/svg+xml" in favicon.headers["content-type"]
     assert page.headers["content-security-policy"].startswith("default-src 'self'")
     assert page.headers["cache-control"] == "no-store"
     assert css.headers["cache-control"] == "no-store"
@@ -33,6 +38,7 @@ def test_root_and_static_assets_are_served(make_agent):
     assert 'addDetailRow(list, "Trace ID"' not in script.text
     assert 'conversation.classList.toggle("is-empty", empty)' in script.text
     assert 'conversation.dataset.state = empty ? "empty" : "active"' in script.text
+    assert "function formatVisibleText(value)" in script.text
 
 
 def test_chat_returns_human_projection_and_preserves_session(make_agent):

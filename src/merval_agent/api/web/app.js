@@ -26,6 +26,16 @@ function unique(values) {
   return [...new Set(values.filter(Boolean))];
 }
 
+function formatVisibleText(value) {
+  if (typeof value !== "string") return value;
+  return value.replace(/(^|[^\w/])(-?\d+\.\d+)(?!\d|[.,]\d)/g, (_match, prefix, number) => {
+    const negative = number.startsWith("-");
+    const [whole, fraction] = (negative ? number.slice(1) : number).split(".");
+    const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    return `${prefix}${negative ? "-" : ""}${grouped},${fraction}`;
+  });
+}
+
 function showError(message) {
   errorRegion.textContent = message;
   errorRegion.hidden = false;
@@ -152,7 +162,7 @@ function renderTechnicalDetails(article, data) {
     panel.content.append(element("h4", "", "Indicadores faltantes"));
     const missingList = element("ul");
     for (const [name, reason] of missing) {
-      missingList.append(element("li", "", `${name}: ${reason}`));
+      missingList.append(element("li", "", `${name}: ${formatVisibleText(reason)}`));
     }
     panel.content.append(missingList);
   }
@@ -161,7 +171,7 @@ function renderTechnicalDetails(article, data) {
     panel.content.append(element("h4", "", "Explicaciones de señales"));
     const explanations = element("dl", "detail-list");
     for (const explanation of detail.signal_explanations) {
-      addDetailRow(explanations, explanation.label, explanation.text);
+      addDetailRow(explanations, explanation.label, formatVisibleText(explanation.text));
     }
     panel.content.append(explanations);
   }
@@ -170,7 +180,7 @@ function renderTechnicalDetails(article, data) {
     panel.content.append(element("h4", "", "Notas técnicas y de auditoría"));
     const technicalWarnings = element("ul");
     for (const warning of detail.warnings) {
-      technicalWarnings.append(element("li", "", warning));
+      technicalWarnings.append(element("li", "", formatVisibleText(warning)));
     }
     panel.content.append(technicalWarnings);
   }
@@ -186,14 +196,14 @@ function renderAgentMessage(data) {
   const article = element("article", "message message-agent");
   article.append(element("span", "message-label", "Agente"));
   article.append(element("h3", "result-heading", data.heading));
-  if (data.user_message) article.append(element("p", "", data.user_message));
+  if (data.user_message) article.append(element("p", "", formatVisibleText(data.user_message)));
 
   if (data.result_type === "successful_analysis") {
     const summary = element("div", "summary-grid");
     addFact(summary, "Sesgo técnico", data.conclusion.label);
     addFact(summary, "Confianza", data.confidence.label);
     article.append(summary);
-    article.append(element("p", "", data.executive_summary));
+    article.append(element("p", "", formatVisibleText(data.executive_summary)));
 
     const metrics = element("div", "metrics-grid");
     addFact(metrics, "Tendencia", data.trend.label);
@@ -208,7 +218,9 @@ function renderAgentMessage(data) {
     const warningBox = element("aside", "warning-box");
     warningBox.append(element("strong", "", "Advertencias"));
     const warningList = element("ul");
-    for (const warning of warnings) warningList.append(element("li", "", warning));
+    for (const warning of warnings) {
+      warningList.append(element("li", "", formatVisibleText(warning)));
+    }
     warningBox.append(warningList);
     article.append(warningBox);
   }
@@ -327,7 +339,10 @@ function renderPublishedReport(result) {
   title.tabIndex = -1;
   article.append(title, element("p", "", `Evidencia al ${result.as_of}. Aprobado sin recalcular datos.`));
   for (const [section, text] of Object.entries(result.publication.sections)) {
-    article.append(element("h4", "", SECTION_LABELS[section]), element("p", "", text));
+    article.append(
+      element("h4", "", SECTION_LABELS[section]),
+      element("p", "", formatVisibleText(text)),
+    );
   }
   const note = result.publication.editorial.review_note;
   if (note) article.append(element("h4", "", "Comentario editorial humano"), element("p", "", note));
@@ -345,7 +360,7 @@ function renderAction(action) {
   article.id = `action-${action.action_id}`;
   const title = element("h3", "result-heading", `Revisar informe técnico · ${action.ticker}`);
   title.tabIndex = -1;
-  article.append(title, element("p", "", action.summary));
+  article.append(title, element("p", "", formatVisibleText(action.summary)));
   article.append(element("p", "help-text", `Datos al ${action.as_of} · Versión ${action.version} · ${action.status}`));
   const live = element("p", "status", "Todavía no se finalizó el informe. Aprobar utiliza únicamente la evidencia guardada.");
   live.setAttribute("aria-live", "polite");

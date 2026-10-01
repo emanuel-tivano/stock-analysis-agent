@@ -286,9 +286,28 @@ def test_presenter_formats_numbers_in_spanish_in_one_backend_layer():
     indicators = {metric.key: metric for metric in presented.indicators}
 
     assert indicators["current_price"].display == "6.955,00"
+    assert indicators["current_price"].label == "Último cierre utilizado"
     assert indicators["period_high"].display == "7.134,50"
     assert indicators["change_percent"].display == "13,92 %"
     assert indicators["current_price"].value == 6955
+
+
+def test_presenter_localizes_decimal_prose_without_mutating_domain_result():
+    result = analysis()
+    result.executive_summary = (
+        "Precio 6955.00; referencia 6.955,00; MACD -1.20. Muestra al 2026-09-17."
+    )
+    original = result.model_dump(mode="json")
+
+    presented = present_analysis(result)
+
+    assert presented.executive_summary == (
+        "Precio 6.955,00; referencia 6.955,00; MACD -1,20. Muestra al 2026-09-17."
+    )
+    assert presented.technical_details.signal_explanations[1].text == (
+        "MACD / cero: -1,00 por debajo de 0,00."
+    )
+    assert result.model_dump(mode="json") == original
 
 
 def test_presenter_keeps_full_signal_explanations_in_technical_details():

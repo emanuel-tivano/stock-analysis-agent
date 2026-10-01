@@ -393,12 +393,15 @@ def narrative(assessment: TechnicalAssessment, sample_size: int) -> tuple[str, s
         ),
         "UNAVAILABLE": "No hay indicadores suficientes para determinar momentum",
     }[assessment.momentum_state]
+    momentum_sentence = momentum_text.rstrip().rstrip(".") + "."
     summary = (
         f"Señal técnica {LABELS[assessment.conclusion]}; tendencia {LABELS[assessment.trend]} "
-        f"según las medias y el precio. {momentum_text}. Muestra: {sample_size} observaciones "
+        f"según las medias y el precio. {momentum_sentence} Muestra: {sample_size} observaciones "
         f"al {assessment.as_of}."
     )
-    details = momentum_text + ". " + " ".join(s.explanation for s in assessment.signals.values())
+    details = momentum_sentence + " " + " ".join(
+        s.explanation for s in assessment.signals.values()
+    )
     details += " Confirmación: " + (
         "indicadores alineados; no es certeza predictiva."
         if assessment.confirmation == "ALIGNED"

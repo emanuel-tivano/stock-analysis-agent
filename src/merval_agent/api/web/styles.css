@@ -408,6 +408,13 @@ textarea {
   font-size: 0.82rem;
 }
 
+.privacy-note {
+  margin: 0.65rem 0 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;

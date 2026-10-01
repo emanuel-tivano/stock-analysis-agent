@@ -5,7 +5,7 @@ import pytest
 from merval_agent.domain.models import Bar, MarketHistory, QuoteSnapshot
 from merval_agent.domain.policy import MAX_PROVIDER_CLOCK_AHEAD
 from merval_agent.domain.technical import calculate
-from merval_agent.domain.technical_assessment import assess, stale_date
+from merval_agent.domain.technical_assessment import assess, narrative, stale_date
 
 AT = datetime(2026, 9, 16, 22, tzinfo=UTC)
 
@@ -84,6 +84,18 @@ def test_contradiction_is_explicit():
     assert a.signals["macd_signal"].signal == "BULLISH"
     assert a.signals["rsi14"].signal == "BEARISH"
     assert "zona neutral" in a.signals["rsi14"].explanation
+
+
+def test_narrative_does_not_duplicate_terminal_punctuation():
+    h = history(direction=-1)
+    assessment = assess(h, calculate(h.bars), AT)
+
+    summary, details = narrative(assessment, len(h.bars))
+
+    assert ".." not in summary
+    assert ".." not in details
+    assert "MACD / señal" in summary
+    assert ". Muestra:" in summary
 
 
 @pytest.mark.parametrize(

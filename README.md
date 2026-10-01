@@ -8,6 +8,12 @@ Agente educativo para analizar acciones argentinas con datos de mercado, indicad
 
 > El resultado es informativo. No constituye asesoramiento financiero ni una recomendación de compra o venta.
 
+## Privacidad y trazabilidad
+
+No ingresar datos personales o sensibles. Las consultas pueden procesarse mediante servicios
+externos y almacenarse para trazabilidad técnica. Este aviso describe el comportamiento actual;
+el MVP todavía no implementa una política de retención o borrado automático.
+
 ## Problema y usuario
 
 El proyecto responde consultas sobre acciones domésticas argentinas. Está pensado para una persona que quiere una lectura técnica trazable sin tener que buscar precios, calcular indicadores y comparar señales manualmente.

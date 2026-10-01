@@ -1,4 +1,6 @@
+import re
 from collections.abc import Iterable
+from decimal import Decimal
 from urllib.parse import urlsplit
 
 from merval_agent.domain.models import FinalAnalysis, TechnicalAssessment, TechnicalMetrics
@@ -57,7 +59,7 @@ VOLUME_CONFIRMATION_LABELS = {
 }
 
 METRICS = (
-    ("current_price", "Precio actual"),
+    ("current_price", "Último cierre utilizado"),
     ("sma20", "SMA20"),
     ("sma50", "SMA50"),
     ("ema12", "EMA12"),
@@ -70,6 +72,8 @@ METRICS = (
     ("period_high", "Máximo del período"),
     ("period_low", "Mínimo del período"),
 )
+
+VISIBLE_DECIMAL_PATTERN = re.compile(r"(?<![\w/])(?P<number>-?\d+\.\d+)(?!\d|[.,]\d)")
 
 PROVISIONAL_WARNING = (
     "Datos provisionales: la última cotización corresponde a la rueda actual, "
@@ -106,6 +110,18 @@ def translated(
 def _format_number(value: float | int) -> str:
     formatted = f"{value:,.2f}"
     return formatted.replace(",", "\0").replace(".", ",").replace("\0", ".")
+
+
+def _format_visible_text(value: str) -> str:
+    """Localize decimal tokens in deterministic prose without touching technical values."""
+
+    def replace(match: re.Match[str]) -> str:
+        raw = match.group("number")
+        decimals = len(raw.partition(".")[2])
+        formatted = f"{Decimal(raw):,.{decimals}f}"
+        return formatted.replace(",", "\0").replace(".", ",").replace("\0", ".")
+
+    return VISIBLE_DECIMAL_PATTERN.sub(replace, value)
 
 
 def _metric(key: str, label: str, value: float | int | None) -> PresentedMetric:
@@ -246,12 +262,17 @@ def _macd_summary(assessment: TechnicalAssessment) -> str:
 def present_analysis(result: FinalAnalysis) -> ChatResponse:
     """Build a deterministic, user-facing projection without changing domain conclusions."""
     if result.status == "PAUSED":
+        pending_action = result.pending_action
+        if pending_action is not None:
+            pending_action = pending_action.model_copy(
+                update={"summary": _format_visible_text(pending_action.summary)}
+            )
         return ChatResponse(
             status="PAUSED",
             result_type="other",
             heading="Informe pendiente de revisión",
-            executive_summary=result.executive_summary,
-            pending_action=result.pending_action,
+            executive_summary=_format_visible_text(result.executive_summary),
+            pending_action=pending_action,
             ticker=result.ticker,
             trace_id=result.trace_id,
             session_id=result.session_id,
@@ -268,8 +289,8 @@ def present_analysis(result: FinalAnalysis) -> ChatResponse:
             }[result_type],
             ticker=result.ticker,
             company_name=result.company_name,
-            user_message=result.executive_summary,
-            executive_summary=result.executive_summary,
+            user_message=_format_visible_text(result.executive_summary),
+            executive_summary=_format_visible_text(result.executive_summary),
             trace_id=result.trace_id,
             session_id=result.session_id,
         )
@@ -327,9 +348,15 @@ def present_analysis(result: FinalAnalysis) -> ChatResponse:
             f"{metrics.sample_size:,}".replace(",", ".") if metrics.sample_size else "No disponible"
         ),
         missing_indicators=assessment.missing_indicators,
-        warnings=_unique([*assessment.warnings, *result.technical.limitations]),
+        warnings=[
+            _format_visible_text(item)
+            for item in _unique([*assessment.warnings, *result.technical.limitations])
+        ],
         signal_explanations=[
-            PresentedExplanation(label=SIGNAL_DETAIL_LABELS[key], text=signal.explanation)
+            PresentedExplanation(
+                label=SIGNAL_DETAIL_LABELS[key],
+                text=_format_visible_text(signal.explanation),
+            )
             for key, signal in assessment.signals.items()
             if key in SIGNAL_DETAIL_LABELS
         ],
@@ -344,8 +371,10 @@ def present_analysis(result: FinalAnalysis) -> ChatResponse:
         ticker=result.ticker,
         company_name=result.company_name,
         heading=heading,
-        user_message=_human_message(result),
-        executive_summary=result.executive_summary,
+        user_message=(
+            _format_visible_text(message) if (message := _human_message(result)) is not None else None
+        ),
+        executive_summary=_format_visible_text(result.executive_summary),
         conclusion=conclusion,
         confidence=confidence,
         trend=trend,
@@ -355,7 +384,10 @@ def present_analysis(result: FinalAnalysis) -> ChatResponse:
         macd_summary=_macd_summary(assessment),
         indicators=indicators,
         sources=sources,
-        warnings=_presentation_warnings(result, assessment, metrics),
+        warnings=[
+            _format_visible_text(item)
+            for item in _presentation_warnings(result, assessment, metrics)
+        ],
         technical_details=technical_details,
         trace_id=result.trace_id,
         session_id=result.session_id,

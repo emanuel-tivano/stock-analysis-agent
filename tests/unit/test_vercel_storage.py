@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 import app as vercel_entrypoint
@@ -25,6 +27,15 @@ class FakeConnection:
 
 def test_vercel_entrypoint_exports_fastapi_application():
     assert vercel_entrypoint.app is api_app
+
+
+def test_vercelignore_excludes_env_files_but_keeps_example():
+    rules = (Path(__file__).parents[2] / ".vercelignore").read_text(encoding="utf-8").splitlines()
+
+    assert ".env" in rules
+    assert ".env.*" in rules
+    assert "!.env.example" in rules
+    assert rules.index("!.env.example") > rules.index(".env.*")
 
 
 def test_repository_factory_keeps_sqlite_as_local_default(monkeypatch, tmp_path):

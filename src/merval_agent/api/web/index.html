@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="Interfaz conversacional accesible para análisis técnico de acciones argentinas.">
     <title>Stock Analysis Agent</title>
+    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/assets/styles.css">
     <script src="/assets/app.js" defer></script>
   </head>
@@ -63,13 +64,17 @@
               rows="2"
               maxlength="2000"
               placeholder="Escribí tu consulta…"
-              aria-describedby="message-help"
+              aria-describedby="message-help privacy-note"
               required
             ></textarea>
             <button id="send" class="primary-button" type="submit">Enviar</button>
           </div>
           <p id="message-help" class="help-text">
             Enter envía. Shift + Enter agrega una nueva línea.
+          </p>
+          <p id="privacy-note" class="privacy-note">
+            No ingreses datos personales o sensibles. Las consultas pueden procesarse mediante
+            servicios externos y almacenarse para trazabilidad técnica.
           </p>
         </form>
       </section>
