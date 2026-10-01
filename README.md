@@ -134,8 +134,22 @@ Variables principales:
 | `DATABASE_PATH` | archivo SQLite local |
 | `DATABASE_URL` | PostgreSQL productivo; si está definido tiene precedencia |
 | `MAX_AGENT_STEPS` | presupuesto máximo de decisiones |
+| `RATE_LIMIT_ENABLED` | activa la protección de endpoints públicos costosos |
+| `RATE_LIMIT_*_PER_MINUTE` | cuotas por cliente para chat, ejecución y decisiones HITL |
 
 La lista completa y valores seguros están en `.env.example`.
+
+### Rate limiting
+
+`POST /chat` y `POST /agent/run` tienen cuotas independientes. Las decisiones HITL
+`approve`, `modify` y `reject` comparten otra cuota. Los valores se configuran por entorno con
+las variables `RATE_LIMIT_*`; al excederlos, la API responde `429` con un mensaje genérico y
+`Retry-After`, antes de ejecutar el agente o la decisión. `/health`, la portada, los assets y las
+lecturas HITL no consumen cuota.
+
+En producción la cuota se coordina mediante PostgreSQL entre instancias de Vercel. Localmente se
+usa SQLite, y los repositorios fake de tests disponen de un fallback en memoria. La clave guardada
+es una huella SHA-256 de la dirección normalizada del cliente, no la IP completa.
 
 ## Ejecución
 

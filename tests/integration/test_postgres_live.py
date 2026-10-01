@@ -1,6 +1,7 @@
 """Opt-in PostgreSQL contract test for the Vercel persistence boundary."""
 
 import os
+from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
 import pytest
@@ -59,3 +60,14 @@ def test_postgres_preserves_hitl_across_repository_restarts(make_agent):
             f"/agent/actions/{action['action_id']}", params={"session_id": session_id}
         )
         assert fetched.json() == approved.json()
+
+    rate_limit_key = "live-rate-limit-" + uuid4().hex
+    rate_limit_repository = PostgresRepository(database_url)
+
+    def consume(_):
+        return rate_limit_repository.consume_rate_limit(
+            rate_limit_key, "concurrency", 1_800_000_000, 3, 1_800_000_000
+        )
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        assert sum(pool.map(consume, range(12))) == 3

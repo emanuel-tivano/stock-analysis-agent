@@ -58,6 +58,14 @@ SCHEMA_STATEMENTS = (
         trace_id TEXT NOT NULL UNIQUE REFERENCES analyses(trace_id),
         result TEXT NOT NULL
     )""",
+    """CREATE TABLE IF NOT EXISTS rate_limit_buckets (
+        client_key TEXT NOT NULL,
+        bucket TEXT NOT NULL,
+        window_start BIGINT NOT NULL,
+        request_count INTEGER NOT NULL,
+        PRIMARY KEY(client_key, bucket, window_start)
+    )""",
+    "CREATE INDEX IF NOT EXISTS rate_limit_window ON rate_limit_buckets(window_start)",
     """CREATE TABLE IF NOT EXISTS schema_migrations (
         version INTEGER PRIMARY KEY,
         applied_at TEXT NOT NULL
@@ -139,6 +147,30 @@ class PostgresRepository:
             )
             if pending_action is not None:
                 self._insert_action(db, pending_action)
+
+    def consume_rate_limit(
+        self,
+        client_key: str,
+        bucket: str,
+        window_start: int,
+        limit: int,
+        expires_before: int,
+    ) -> bool:
+        """Reserve one request with one race-safe PostgreSQL upsert."""
+        with self._connection() as db:
+            db.execute(
+                "DELETE FROM rate_limit_buckets WHERE window_start < %s", (expires_before,)
+            )
+            row = db.execute(
+                "INSERT INTO rate_limit_buckets "
+                "(client_key,bucket,window_start,request_count) VALUES (%s,%s,%s,1) "
+                "ON CONFLICT (client_key,bucket,window_start) DO UPDATE "
+                "SET request_count=rate_limit_buckets.request_count+1 "
+                "WHERE rate_limit_buckets.request_count < %s "
+                "RETURNING request_count",
+                (client_key, bucket, window_start, limit),
+            ).fetchone()
+            return row is not None
 
     def _insert_action(self, db, action: PendingAction) -> None:
         action = PendingAction.model_validate(action.model_dump())

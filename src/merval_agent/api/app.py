@@ -1,5 +1,7 @@
 import logging
+import os
 import sqlite3
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -10,7 +12,14 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from psycopg import DatabaseError
 from pydantic import Field
+from starlette.concurrency import run_in_threadpool
 
+from merval_agent.api.rate_limit import (
+    RATE_LIMIT_MESSAGE,
+    RateLimiter,
+    client_key,
+    protected_bucket,
+)
 from merval_agent.bootstrap import build_agent
 from merval_agent.config import Settings
 from merval_agent.domain.actions import (
@@ -25,6 +34,18 @@ from merval_agent.presentation.models import ChatResponse
 from merval_agent.presentation.presenter import present_analysis
 
 WEB_DIR = Path(__file__).with_name("web")
+RATE_LIMIT_OPENAPI_RESPONSE = {
+    429: {
+        "description": "Cuota temporal excedida.",
+        "headers": {
+            "Retry-After": {
+                "description": "Segundos mínimos antes de reintentar.",
+                "schema": {"type": "integer"},
+            }
+        },
+        "content": {"application/json": {"example": {"detail": RATE_LIMIT_MESSAGE}}},
+    }
+}
 
 
 class RunRequest(Model):
@@ -41,7 +62,13 @@ class ChatRequest(Model):
     )
 
 
-def create_app(agent=None, settings: Settings | None = None) -> FastAPI:
+def create_app(
+    agent=None,
+    settings: Settings | None = None,
+    *,
+    rate_limit_clock: Callable[[], float] | None = None,
+    trust_vercel_headers: bool | None = None,
+) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app):
         logging.basicConfig(level=logging.INFO)
@@ -50,6 +77,21 @@ def create_app(agent=None, settings: Settings | None = None) -> FastAPI:
             app.state.agent = agent or build_agent(config, http)
             app.state.provider = config.llm_provider
             app.state.storage = type(app.state.agent.repository).__name__
+            app.state.rate_limiter = RateLimiter(
+                app.state.agent.repository,
+                enabled=config.rate_limit_enabled,
+                limits={
+                    "chat": config.rate_limit_chat_per_minute,
+                    "agent_run": config.rate_limit_agent_run_per_minute,
+                    "hitl": config.rate_limit_hitl_per_minute,
+                },
+                clock=rate_limit_clock,
+            )
+            app.state.trust_vercel_headers = (
+                os.getenv("VERCEL") == "1"
+                if trust_vercel_headers is None
+                else trust_vercel_headers
+            )
             yield
 
     app = FastAPI(title="Merval Equity Analyst AI", lifespan=lifespan)
@@ -99,21 +141,63 @@ def create_app(agent=None, settings: Settings | None = None) -> FastAPI:
     ):
         return request.app.state.agent.repository.get_action_events(action_id, session_id)
 
-    @app.post("/agent/actions/{action_id}/approve", response_model=ActionDecisionResponse)
+    @app.post(
+        "/agent/actions/{action_id}/approve",
+        response_model=ActionDecisionResponse,
+        responses=RATE_LIMIT_OPENAPI_RESPONSE,
+    )
     def approve_action(action_id: UUID, body: ApproveActionRequest, request: Request):
         return request.app.state.agent.repository.decide_action(action_id, "approve", body)
 
-    @app.post("/agent/actions/{action_id}/modify", response_model=ActionDecisionResponse)
+    @app.post(
+        "/agent/actions/{action_id}/modify",
+        response_model=ActionDecisionResponse,
+        responses=RATE_LIMIT_OPENAPI_RESPONSE,
+    )
     def modify_action(action_id: UUID, body: ModifyActionRequest, request: Request):
         return request.app.state.agent.repository.decide_action(action_id, "modify", body)
 
-    @app.post("/agent/actions/{action_id}/reject", response_model=ActionDecisionResponse)
+    @app.post(
+        "/agent/actions/{action_id}/reject",
+        response_model=ActionDecisionResponse,
+        responses=RATE_LIMIT_OPENAPI_RESPONSE,
+    )
     def reject_action(action_id: UUID, body: RejectActionRequest, request: Request):
         return request.app.state.agent.repository.decide_action(action_id, "reject", body)
 
     @app.middleware("http")
     async def json_charset(request, call_next):
-        response = await call_next(request)
+        bucket = protected_bucket(request.method, request.url.path)
+        response = None
+        if bucket is not None:
+            try:
+                identity = client_key(
+                    request,
+                    trust_vercel_headers=request.app.state.trust_vercel_headers,
+                )
+                outcome = await run_in_threadpool(
+                    request.app.state.rate_limiter.check, bucket, identity
+                )
+                if not outcome.allowed:
+                    response = JSONResponse(
+                        status_code=429,
+                        content={"detail": RATE_LIMIT_MESSAGE},
+                        headers={
+                            "Retry-After": str(outcome.retry_after),
+                            "Cache-Control": "no-store",
+                        },
+                    )
+            except (sqlite3.Error, DatabaseError):
+                response = JSONResponse(
+                    status_code=503,
+                    content={
+                        "detail": "El servicio no está disponible temporalmente. "
+                        "Reintentá en unos segundos."
+                    },
+                    headers={"Cache-Control": "no-store"},
+                )
+        if response is None:
+            response = await call_next(request)
         if response.headers.get("content-type", "").split(";")[0] == "application/json":
             response.headers["content-type"] = "application/json; charset=utf-8"
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -140,11 +224,13 @@ def create_app(agent=None, settings: Settings | None = None) -> FastAPI:
             "storage": request.app.state.storage,
         }
 
-    @app.post("/agent/run", response_model=FinalAnalysis)
+    @app.post(
+        "/agent/run", response_model=FinalAnalysis, responses=RATE_LIMIT_OPENAPI_RESPONSE
+    )
     def run(body: RunRequest, request: Request):
         return request.app.state.agent.run(body.message, body.session_id)
 
-    @app.post("/chat", response_model=ChatResponse)
+    @app.post("/chat", response_model=ChatResponse, responses=RATE_LIMIT_OPENAPI_RESPONSE)
     def chat(body: ChatRequest, request: Request):
         if not body.message.strip():
             return JSONResponse(

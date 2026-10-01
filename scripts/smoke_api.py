@@ -199,7 +199,7 @@ def main():
                 assert telecom_body["status"] == "ANSWER"
                 assert telecom_body["ticker"] == "TECO2"
                 assert MarketStub.history_calls == 1
-                for ticker in ("GGAL", "PAMP"):
+                for ticker in ("GGAL", "YPFD", "PAMP"):
                     response = http.post(
                         "/chat",
                         json={
@@ -221,7 +221,7 @@ def main():
                     assert "MACD /" not in body["macd_summary"]
                     assert len(body["warnings"]) == len(set(body["warnings"]))
                     assert body["sources"]
-                assert MarketStub.history_calls == 3
+                assert MarketStub.history_calls == 4
                 MarketStub.sample_size = 10
                 insufficient = http.post(
                     "/chat",
@@ -283,7 +283,7 @@ def main():
                 print(
                     "Uvicorn started with SQLiteRepository; GET /, /health, /docs and asset=200; "
                     "PPSA/XYZINVALIDO=asset_not_found and AAPL=unsupported_asset with 0 history calls; "
-                    "TECO2/GGAL/PAMP=ANSWER; short GGAL=insufficient_market_data; "
+                    "TECO2/GGAL/YPFD/PAMP=ANSWER; short GGAL=insufficient_market_data; "
                     "POST /agent/run=200 ANSWER GGAL; HITL PAUSED->APPROVED->EXECUTED"
                 )
         finally:

@@ -25,6 +25,11 @@ class FakeConnection:
         return self
 
 
+class RateLimitConnection(FakeConnection):
+    def fetchone(self):
+        return (1,)
+
+
 def test_vercel_entrypoint_exports_fastapi_application():
     assert vercel_entrypoint.app is api_app
 
@@ -82,12 +87,29 @@ def test_postgres_repository_serializes_schema_migration():
     assert "CREATE TABLE IF NOT EXISTS pending_actions" in sql
     assert "CREATE TABLE IF NOT EXISTS action_decisions" in sql
     assert "CREATE TABLE IF NOT EXISTS report_publications" in sql
+    assert "CREATE TABLE IF NOT EXISTS rate_limit_buckets" in sql
     assert sql.index("pg_advisory_xact_lock") < sql.index("CREATE TABLE")
 
 
 def test_postgres_repository_rejects_non_postgres_urls():
     with pytest.raises(ValueError, match="PostgreSQL protocol"):
         PostgresRepository("sqlite:///tmp/not-production.sqlite3")
+
+
+def test_postgres_rate_limit_uses_one_conditional_atomic_upsert():
+    connection = RateLimitConnection()
+    repository = PostgresRepository(
+        "postgresql://db.example/tfi", connect=lambda url, **options: connection
+    )
+
+    assert repository.consume_rate_limit("hashed-client", "chat", 120, 10, 120)
+    statement, parameters = next(
+        (sql, values) for sql, values in connection.statements if "RETURNING request_count" in sql
+    )
+    normalized = " ".join(statement.split())
+    assert "ON CONFLICT (client_key,bucket,window_start) DO UPDATE" in normalized
+    assert "WHERE rate_limit_buckets.request_count < %s" in normalized
+    assert parameters == ("hashed-client", "chat", 120, 10)
 
 
 def test_postgres_bootstrap_updates_only_requested_env_key(tmp_path):

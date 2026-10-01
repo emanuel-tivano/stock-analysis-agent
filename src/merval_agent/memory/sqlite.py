@@ -20,6 +20,47 @@ class SQLiteRepository(ActionStore):
             if "events" not in columns:
                 db.execute("ALTER TABLE analyses ADD COLUMN events TEXT NOT NULL DEFAULT '[]'")
             migrate_actions(db)
+            db.execute("""CREATE TABLE IF NOT EXISTS rate_limit_buckets (
+                client_key TEXT NOT NULL, bucket TEXT NOT NULL, window_start INTEGER NOT NULL,
+                request_count INTEGER NOT NULL,
+                PRIMARY KEY(client_key, bucket, window_start))""")
+            db.execute(
+                "CREATE INDEX IF NOT EXISTS rate_limit_window ON rate_limit_buckets(window_start)"
+            )
+
+    def consume_rate_limit(
+        self,
+        client_key: str,
+        bucket: str,
+        window_start: int,
+        limit: int,
+        expires_before: int,
+    ) -> bool:
+        """Atomically reserve one request in a fixed window."""
+        with closing(self._connection()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute(
+                "DELETE FROM rate_limit_buckets WHERE window_start < ?", (expires_before,)
+            )
+            row = db.execute(
+                "SELECT request_count FROM rate_limit_buckets "
+                "WHERE client_key=? AND bucket=? AND window_start=?",
+                (client_key, bucket, window_start),
+            ).fetchone()
+            if row is None:
+                db.execute(
+                    "INSERT INTO rate_limit_buckets VALUES (?,?,?,1)",
+                    (client_key, bucket, window_start),
+                )
+                return True
+            if row[0] >= limit:
+                return False
+            db.execute(
+                "UPDATE rate_limit_buckets SET request_count=request_count+1 "
+                "WHERE client_key=? AND bucket=? AND window_start=?",
+                (client_key, bucket, window_start),
+            )
+            return True
 
     def save(self, state: AgentState, result: FinalAnalysis, *, pending_action=None) -> None:
         trace = []

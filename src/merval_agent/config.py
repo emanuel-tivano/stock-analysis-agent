@@ -27,4 +27,8 @@ class Settings(BaseSettings):
     http_timeout_seconds: float = Field(default=20, gt=0)
     database_url: SecretStr = SecretStr("")
     database_path: str = "data/sessions.sqlite3"
+    rate_limit_enabled: bool = True
+    rate_limit_chat_per_minute: int = Field(default=10, ge=1, le=10_000)
+    rate_limit_agent_run_per_minute: int = Field(default=10, ge=1, le=10_000)
+    rate_limit_hitl_per_minute: int = Field(default=20, ge=1, le=10_000)
     stale_after_days: int = Field(default=7, ge=0)
