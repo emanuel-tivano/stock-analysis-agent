@@ -4,6 +4,8 @@ import hashlib
 import json
 import re
 import unicodedata
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
@@ -180,6 +182,23 @@ class ActionDecisionResponse(Model):
     result: FinalAnalysis | None = None
 
 
+@dataclass(frozen=True)
+class ActionTransitionEvent:
+    name: str
+    action: PendingAction
+    previous: str
+    actor: str = "human"
+    reason: str = "PROPOSED"
+
+
+@dataclass(frozen=True)
+class ActionTransition:
+    action: PendingAction
+    events: tuple[ActionTransitionEvent, ...]
+    message: str
+    analysis_status: Literal["ANSWER", "REJECTED", "PAUSED"]
+
+
 def finalize(action: PendingAction) -> FinalAnalysis:
     """No provider, tools, clock-dependent assessment or recomputation is allowed here."""
     action = PendingAction.model_validate(action.model_dump())
@@ -214,3 +233,111 @@ def finalize(action: PendingAction) -> FinalAnalysis:
         sections={s: contents[s] for s in ordered},
     )
     return result
+
+
+def decision_conflict(action: PendingAction, expected_version: int) -> str | None:
+    if action.version != expected_version:
+        return "La propuesta cambió. Recuperá la versión actual antes de decidir."
+    if action.status not in ("PENDING", "MODIFIED"):
+        return "La acción ya fue resuelta; no puede modificarse ni ejecutarse otra vez."
+    return None
+
+
+def transition_action(
+    action: PendingAction,
+    decision: Literal["approve", "modify", "reject"],
+    request: ApproveActionRequest,
+    *,
+    decided_at: datetime,
+) -> ActionTransition:
+    """Apply the shared, persistence-agnostic HITL state transition."""
+    if decision == "modify" and not isinstance(request, ModifyActionRequest):
+        raise ValueError("Editorial options required")
+
+    action = PendingAction.model_validate(action.model_dump())
+    previous = action.status
+    action.updated_at = decided_at
+    action.human_decision = decision
+    action.human_comment = request.comment
+    events = []
+
+    if decision == "modify":
+        action.version += 1
+        action.proposed_payload = request.changes.model_copy(deep=True)
+        action.status = "MODIFIED"
+        events.append(
+            ActionTransitionEvent(
+                "ACTION_MODIFIED",
+                PendingAction.model_validate(action.model_dump()),
+                previous,
+                reason="EDITORIAL_CHANGE",
+            )
+        )
+        message = "Propuesta modificada; todavía requiere aprobación."
+        analysis_status = "PAUSED"
+    elif decision == "reject":
+        action.status = "REJECTED"
+        action.resolved_at = action.updated_at
+        events.append(
+            ActionTransitionEvent(
+                "ACTION_REJECTED",
+                PendingAction.model_validate(action.model_dump()),
+                previous,
+                reason="HUMAN_REJECTION",
+            )
+        )
+        message = "Informe rechazado. No se publicó; la auditoría se conserva."
+        analysis_status = "REJECTED"
+    else:
+        action.status = "APPROVED"
+        action.approved_payload_sha256 = digest(action.proposed_payload)
+        events.append(
+            ActionTransitionEvent(
+                "ACTION_APPROVED",
+                PendingAction.model_validate(action.model_dump()),
+                previous,
+                reason="EXACT_VERSION_APPROVAL",
+            )
+        )
+        action.result = finalize(action)
+        action.status = "EXECUTED"
+        action.resolved_at = action.updated_at
+        events.append(
+            ActionTransitionEvent(
+                "ACTION_EXECUTED",
+                PendingAction.model_validate(action.model_dump()),
+                "APPROVED",
+                actor="system",
+                reason="LOCAL_REPORT_FINALIZED",
+            )
+        )
+        message = "Informe finalizado con la evidencia guardada, sin nuevas consultas."
+        analysis_status = "ANSWER"
+
+    action = PendingAction.model_validate(action.model_dump())
+    return ActionTransition(action, tuple(events), message, analysis_status)
+
+
+def action_event_record(
+    action: PendingAction,
+    name: str,
+    previous: str,
+    *,
+    actor: str = "system",
+    key_hash: str | None = None,
+    reason: str = "PROPOSED",
+) -> dict:
+    return {
+        "event": name,
+        "action_id": str(action.action_id),
+        "trace_id": action.trace_id,
+        "session_id": action.session_id,
+        "version": action.version,
+        "transition": f"{previous}->{action.status}",
+        "timestamp": action.updated_at.isoformat(),
+        "outcome": "CONFLICT" if name == "ACTION_CONFLICT" else action.status,
+        "actor": actor,
+        "reason": reason,
+        "payload_sha256": digest(action.proposed_payload),
+        "idempotency_key_sha256": key_hash,
+    }

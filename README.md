@@ -113,8 +113,8 @@ Requiere Python 3.11 o posterior.
 
 ```powershell
 py -3.11 -m venv .venv
-.venv\Scripts\python -m pip install --upgrade pip
-.venv\Scripts\python -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 Copy-Item .env.example .env
 ```
 
@@ -154,7 +154,7 @@ es una huella SHA-256 de la dirección normalizada del cliente, no la IP complet
 ## Ejecución
 
 ```powershell
-.venv\Scripts\python -m uvicorn merval_agent.api.app:app --host 127.0.0.1 --port 8000
+.\.venv\Scripts\python.exe -m uvicorn merval_agent.api.app:app --host 127.0.0.1 --port 8000
 ```
 
 Abrir `http://127.0.0.1:8000`.
@@ -185,8 +185,8 @@ conservar trazas y acciones HITL entre invocaciones.
 Prueba opt-in contra una base PostgreSQL de testing:
 
 ```powershell
-.venv\Scripts\python scripts/bootstrap_postgres.py
-.venv\Scripts\python -m pytest -q -m live tests/integration/test_postgres_live.py
+.\.venv\Scripts\python.exe scripts/bootstrap_postgres.py
+.\.venv\Scripts\python.exe -m pytest -q -m live tests/integration/test_postgres_live.py
 ```
 
 El inicializador solicita la contraseña del administrador `postgres` mediante entrada oculta,
@@ -204,7 +204,7 @@ reproducible sin servicios pagos.
 Smoke completo de API y frontend contra un mercado local simulado:
 
 ```powershell
-.venv\Scripts\python scripts/smoke_api.py
+.\.venv\Scripts\python.exe scripts/smoke_api.py
 ```
 
 El flujo HITL se valida dentro de la suite de integración, incluida la persistencia,
@@ -213,7 +213,7 @@ idempotencia, modificación, aprobación y rechazo de acciones pendientes.
 Para inspeccionar una traza persistida:
 
 ```powershell
-.venv\Scripts\python scripts/show_trace.py TRACE_ID
+.\.venv\Scripts\python.exe scripts/show_trace.py TRACE_ID
 ```
 
 ## Tests
@@ -221,7 +221,7 @@ Para inspeccionar una traza persistida:
 La suite conservada cubre contratos, adaptadores, agente, cálculo técnico, assessment, presentación, API, HITL y el flujo E2E:
 
 ```powershell
-.venv\Scripts\python -m pytest -q
+.\.venv\Scripts\python.exe -m pytest -q
 ```
 
 No necesita red. Los providers y fuentes externas se simulan en los tests.
@@ -233,7 +233,7 @@ El dataset y la evidencia se encuentran en `evals/`.
 Ejecución offline con el provider Fake:
 
 ```powershell
-.venv\Scripts\python scripts/eval_real_llm.py --fake
+.\.venv\Scripts\python.exe scripts/eval_real_llm.py --fake
 ```
 
 La evaluación offline vigente cubre 16 casos técnicos, ambigüedad, errores de fuente,

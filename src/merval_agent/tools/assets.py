@@ -37,7 +37,7 @@ CATALOG = {
 }
 
 
-def _symbol_candidates(query: str) -> list[str]:
+def symbol_candidates(query: str) -> list[str]:
     candidates = re.findall(r"(?<!\w)[A-Z][A-Z0-9._-]{1,29}(?!\w)", query)
     candidates = [value.rstrip("._-") for value in candidates]
     non_asset_terms = {
@@ -67,7 +67,7 @@ def _symbol_candidates(query: str) -> list[str]:
 
 
 def _requested_symbol(query: str) -> str | None:
-    candidates = _symbol_candidates(query)
+    candidates = symbol_candidates(query)
     return next(
         (value for value in candidates if value in CATALOG), candidates[-1] if candidates else None
     )
@@ -75,7 +75,7 @@ def _requested_symbol(query: str) -> str | None:
 
 def explicit_user_symbol(query: str) -> str | None:
     """Return one ticker written by the user, never an inferred alias."""
-    candidates = _symbol_candidates(query)
+    candidates = symbol_candidates(query)
     if len(candidates) == 1:
         return candidates[0]
     tokens = set(re.findall(r"[a-z]+", folded(query)))
@@ -95,7 +95,7 @@ def resolve_asset(
     tokens = set(re.findall(r"[a-z]+", folded(query)))
     foreign_scope = bool(tokens & {"adr", "nyse", "usd", "cedear"})
     symbol = symbol.strip().upper() if symbol else None
-    explicit_candidates = _symbol_candidates(query)
+    explicit_candidates = symbol_candidates(query)
     requested_symbol = explicit_user_symbol(query) or symbol or _requested_symbol(query)
     if len(explicit_candidates) > 1:
         return AssetResolution(

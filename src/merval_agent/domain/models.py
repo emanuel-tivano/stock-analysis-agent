@@ -1,547 +1,74 @@
-from datetime import UTC, date, datetime
-from enum import StrEnum
-from typing import Annotated, Any, Literal
-from uuid import uuid4
+"""Backward-compatible facade for the domain model modules."""
 
-from pydantic import (
-    AwareDatetime,
-    BaseModel,
-    BeforeValidator,
-    ConfigDict,
-    Field,
-    StringConstraints,
-    model_validator,
+from .agent_models import (
+    AgentDecision,
+    AgentState,
+    DataQuality,
+    Dimension,
+    EditorialOptions,
+    Evidence,
+    FinalAnalysis,
+    Generation,
+    IntegratedView,
+    PendingActionResponse,
+    ReportPublication,
+    RequestIntentAssessment,
+    ToolCall,
+    ToolResult,
+    UserIntent,
+)
+from .market_models import (
+    AssetResolution,
+    Bar,
+    CompanyType,
+    DiscardedHistoryReason,
+    DiscardedHistoryRow,
+    ErrorInfo,
+    MarketHistory,
+    QuoteSnapshot,
+)
+from .model_base import TICKER_PATTERN, CalendarDate, HistoryRange, Model, Ticker, now
+from .technical_models import (
+    IndicatorBasis,
+    Signal,
+    TechnicalAssessment,
+    TechnicalMetrics,
+    TechnicalSignal,
 )
 
-TICKER_PATTERN = r"^(?:[A-Z]{2,5}|[A-Z]{1,4}[0-9])$"
-
-Ticker = Annotated[
-    str,
-    StringConstraints(pattern=TICKER_PATTERN),
-    BeforeValidator(lambda v: v.strip().upper() if isinstance(v, str) else v),
+__all__ = [
+    "AgentDecision",
+    "AgentState",
+    "AssetResolution",
+    "Bar",
+    "CalendarDate",
+    "CompanyType",
+    "DataQuality",
+    "Dimension",
+    "DiscardedHistoryReason",
+    "DiscardedHistoryRow",
+    "EditorialOptions",
+    "ErrorInfo",
+    "Evidence",
+    "FinalAnalysis",
+    "Generation",
+    "HistoryRange",
+    "IndicatorBasis",
+    "IntegratedView",
+    "MarketHistory",
+    "Model",
+    "PendingActionResponse",
+    "QuoteSnapshot",
+    "ReportPublication",
+    "RequestIntentAssessment",
+    "Signal",
+    "TICKER_PATTERN",
+    "TechnicalAssessment",
+    "TechnicalMetrics",
+    "TechnicalSignal",
+    "Ticker",
+    "ToolCall",
+    "ToolResult",
+    "UserIntent",
+    "now",
 ]
-HistoryRange = Literal["1W", "1M", "3M", "6M", "1Y"]
-CalendarDate = date
-
-
-def now() -> datetime:
-    return datetime.now(UTC)
-
-
-class Model(BaseModel):
-    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
-
-
-class CompanyType(StrEnum):
-    INDUSTRIAL = "INDUSTRIAL"
-    ENERGY = "ENERGY"
-    UTILITY = "UTILITY"
-    FINANCIAL = "FINANCIAL"
-    OTHER = "OTHER"
-
-
-class UserIntent(Model):
-    analysis_type: Literal["technical", "fundamental", "full"] = "technical"
-
-
-class RequestIntentAssessment(Model):
-    """Internal deterministic classification of the original user request."""
-
-    status: Literal["CLEAR", "MIXED", "CONTRADICTORY"] = "CLEAR"
-    analysis_type: Literal["technical", "fundamental", "full"] | None = None
-    conflict_code: (
-        Literal[
-            "TECHNICAL_REQUIRES_FUNDAMENTAL_EVIDENCE",
-            "FUNDAMENTAL_REQUIRES_TECHNICAL_EVIDENCE",
-        ]
-        | None
-    ) = None
-
-
-class AssetResolution(Model):
-    status: Literal["RESOLVED", "AMBIGUOUS", "NOT_FOUND", "UNSUPPORTED"] = "NOT_FOUND"
-    ticker: Ticker | None = None
-    company_name: str | None = None
-    company_type: CompanyType = CompanyType.OTHER
-    market: Literal["bCBA"] | None = None
-    confidence: float = Field(ge=0, le=1)
-    alternatives: list[str] = Field(default_factory=list)
-    requested_symbol: str | None = Field(default=None, max_length=30, pattern=r"^[A-Z0-9._-]+$")
-    validation_method: Literal["catalog", "provider_quote", "none"] = "none"
-    validation_status: Literal[
-        "VALIDATED",
-        "NOT_FOUND",
-        "UNSUPPORTED",
-        "AMBIGUOUS",
-        "INVALID_FORMAT",
-        "NOT_ATTEMPTED",
-    ] = "NOT_ATTEMPTED"
-    validation_source: str | None = None
-    existence_status: Literal["CONFIRMED", "NOT_FOUND", "NOT_VERIFIED"] = "NOT_VERIFIED"
-    eligibility_status: Literal["ELIGIBLE", "UNSUPPORTED", "NOT_EVALUATED"] = "NOT_EVALUATED"
-    eligibility_reason: (
-        Literal["DOMESTIC_EQUITY", "CEDEAR", "FOREIGN_MARKET", "OTHER_INSTRUMENT"] | None
-    ) = None
-    eligibility_method: Literal[
-        "catalog_metadata", "provider_description_policy", "request_market", "none"
-    ] = "none"
-
-    @model_validator(mode="before")
-    @classmethod
-    def infer_legacy_status(cls, value):
-        if isinstance(value, dict) and "status" not in value:
-            value = dict(value)
-            value["status"] = (
-                "RESOLVED"
-                if value.get("ticker")
-                else "AMBIGUOUS"
-                if value.get("alternatives")
-                else "NOT_FOUND"
-            )
-        return value
-
-    @model_validator(mode="after")
-    def valid_resolution(self):
-        if self.status in ("RESOLVED", "UNSUPPORTED") and self.ticker is None:
-            raise ValueError("Identified asset requires ticker")
-        if self.status in ("AMBIGUOUS", "NOT_FOUND") and self.ticker is not None:
-            raise ValueError("Unresolved asset cannot expose ticker")
-        if self.status == "AMBIGUOUS" and not self.alternatives:
-            raise ValueError("AMBIGUOUS asset requires alternatives")
-        return self
-
-
-class ErrorInfo(Model):
-    code: str
-    message: str
-    retryable: bool = False
-
-
-class Bar(Model):
-    date: date
-    open: float = Field(gt=0)
-    high: float = Field(gt=0)
-    low: float = Field(gt=0)
-    close: float = Field(gt=0)
-    # Required field: explicit null means unknown, never zero traded units.
-    volume: float | None = Field(ge=0)
-
-    @model_validator(mode="after")
-    def valid_prices(self):
-        if not self.low <= min(self.open, self.close) <= max(self.open, self.close) <= self.high:
-            raise ValueError("Inconsistent OHLC")
-        return self
-
-
-DiscardedHistoryReason = Literal[
-    "CLOSE_ABOVE_HIGH",
-    "CLOSE_BELOW_LOW",
-    "OPEN_ABOVE_HIGH",
-    "OPEN_BELOW_LOW",
-    "HIGH_BELOW_LOW",
-    "INVALID_PRICE",
-    "INVALID_VOLUME",
-    "MALFORMED_ROW",
-    "VALIDATION_ERROR",
-]
-
-
-class DiscardedHistoryRow(Model):
-    """Bounded audit evidence for one rejected upstream history row."""
-
-    index: int = Field(ge=0)
-    date: CalendarDate | None = None
-    open: int | float | str | bool | None = None
-    high: int | float | str | bool | None = None
-    low: int | float | str | bool | None = None
-    close: int | float | str | bool | None = None
-    volume: int | float | str | bool | None = None
-    reason: DiscardedHistoryReason
-    validation_error: str = Field(min_length=1, max_length=500)
-
-
-class QuoteSnapshot(Model):
-    bar: Bar
-    source: str
-    observed_at: datetime
-    provider_fetched_at: datetime | None = None
-    received_at: datetime
-    currency: str = Field(min_length=1)
-    mode: Literal["live"] = "live"
-    provisional: Literal[True] = True
-
-    @model_validator(mode="before")
-    @classmethod
-    def migrate_legacy_fetched_at(cls, value):
-        if isinstance(value, dict) and "fetched_at" in value:
-            value = dict(value)
-            legacy = value.pop("fetched_at")
-            value.setdefault("received_at", legacy)
-        return value
-
-    @model_validator(mode="after")
-    def aware(self):
-        if self.observed_at.tzinfo is None or self.received_at.tzinfo is None:
-            raise ValueError("Quote timestamps require timezone")
-        if self.provider_fetched_at and self.provider_fetched_at.tzinfo is None:
-            raise ValueError("Provider quote timestamp requires timezone")
-        return self
-
-    @property
-    def fetched_at(self) -> datetime:
-        """Backward-compatible accessor; quote fetched_at always meant local receipt."""
-        return self.received_at
-
-
-class MarketHistory(Model):
-    resolved_variant: str | None = None
-    ticker: Ticker
-    range: HistoryRange
-    bars: list[Bar]
-    source: str
-    provider_fetched_at: datetime
-    received_at: datetime
-    mode: Literal["live", "demo", "unknown"] = "unknown"
-    stale: bool = False
-    currency: str | None = None
-    quote: QuoteSnapshot | None = None
-    discarded_rows: int = Field(default=0, ge=0)
-    # Empty details with a positive legacy count remain valid for old persisted snapshots.
-    discarded_details: list[DiscardedHistoryRow] = Field(default_factory=list)
-    enrichment_status: Literal[
-        "not_requested", "appended", "excluded", "not_newer", "unavailable", "ineligible_history"
-    ] = "not_requested"
-
-    @model_validator(mode="before")
-    @classmethod
-    def migrate_legacy_fetched_at(cls, value):
-        if isinstance(value, dict) and "fetched_at" in value:
-            value = dict(value)
-            legacy = value.pop("fetched_at")
-            value.setdefault("provider_fetched_at", legacy)
-            value.setdefault("received_at", legacy)
-        return value
-
-    @model_validator(mode="after")
-    def ordered(self):
-        dates = [b.date for b in self.bars]
-        if dates != sorted(set(dates)):
-            raise ValueError("Bars must be unique and chronological")
-        if self.provider_fetched_at.tzinfo is None or self.received_at.tzinfo is None:
-            raise ValueError("History timestamps require timezone")
-        if (self.quote is not None) != (self.enrichment_status in ("appended", "excluded")):
-            raise ValueError("Appended enrichment requires quote provenance")
-        if self.discarded_details and self.discarded_rows != len(self.discarded_details):
-            raise ValueError("Discarded row count must match available audit details")
-        if (
-            self.quote
-            and self.enrichment_status == "appended"
-            and (
-                len(self.bars) < 2
-                or self.bars[-1] != self.quote.bar
-                or self.currency != self.quote.currency
-            )
-        ):
-            raise ValueError("Quote must describe the last bar in the same currency")
-        if (
-            self.quote
-            and self.enrichment_status == "excluded"
-            and (
-                not self.bars
-                or self.quote.bar.date <= self.bars[-1].date
-                or self.currency != self.quote.currency
-            )
-        ):
-            raise ValueError("Excluded quote must be newer and in the same currency")
-        return self
-
-    @property
-    def fetched_at(self) -> datetime:
-        """Backward-compatible accessor for the former upstream fetched_at field."""
-        return self.provider_fetched_at
-
-
-class TechnicalMetrics(Model):
-    current_price: float | None = Field(default=None, gt=0)
-    macd_histogram: float | None = None
-    previous_macd_histogram: float | None = None
-    sma20: float | None = None
-    sma50: float | None = None
-    ema12: float | None = None
-    ema26: float | None = None
-    rsi14: float | None = Field(default=None, ge=0, le=100)
-    macd: float | None = None
-    macd_signal: float | None = None
-    change_percent: float | None = None
-    period_high: float | None = None
-    period_low: float | None = None
-    average_volume: float | None = None
-    sample_size: int = Field(default=0, ge=0)
-
-
-Signal = Literal["BULLISH", "BEARISH", "NEUTRAL", "MIXED", "UNAVAILABLE"]
-
-
-class TechnicalSignal(Model):
-    signal: Signal
-    explanation: str
-
-
-class IndicatorBasis(Model):
-    resolved_variant: str | None = None
-    range: HistoryRange | None = None
-    history_as_of: date | None = None
-    indicators_as_of: date | None = None
-    history_fetched_at: datetime | None = None
-    history_provider_fetched_at: datetime | None = None
-    history_received_at: datetime | None = None
-    history_provider_clock_skew_ms: float | None = None
-    history_closure: Literal["UNVERIFIED"] = "UNVERIFIED"
-    quote_as_of: date | None = None
-    quote_observed_at: datetime | None = None
-    quote_fetched_at: datetime | None = None
-    quote_provider_fetched_at: datetime | None = None
-    quote_received_at: datetime | None = None
-    quote_provider_clock_skew_ms: float | None = None
-    quote_price: float | None = None
-    quote_provisional: bool = False
-    quote_in_indicators: bool = False
-    policy: Literal["HISTORY_ONLY", "INCLUDE_PROVISIONAL_OHLC"] = "HISTORY_ONLY"
-
-
-class TechnicalAssessment(Model):
-    status: Literal[
-        "COMPLETE",
-        "PARTIAL",
-        "INSUFFICIENT_DATA",
-        "SOURCE_ERROR",
-        "STALE",
-        "INVALID_DATA",
-        "UNVERIFIED",
-    ]
-    signals: dict[str, TechnicalSignal] = Field(default_factory=dict)
-    trend: Signal = "UNAVAILABLE"
-    momentum: Signal = "UNAVAILABLE"
-    momentum_state: Literal[
-        "BULLISH",
-        "BEARISH",
-        "NEUTRAL",
-        "MIXED",
-        "UNAVAILABLE",
-        "IMPROVING_BUT_BEARISH",
-        "WEAKENING_BUT_BULLISH",
-        "RECOVERY_FADING_BUT_BEARISH",
-    ] = "UNAVAILABLE"
-    confirmation: Literal["ALIGNED", "UNCONFIRMED", "UNAVAILABLE"] = "UNAVAILABLE"
-    volume_confirmation: Literal["CONFIRMED", "NOT_CONFIRMED", "UNAVAILABLE"] = "UNAVAILABLE"
-    volume_as_of: date | None = None
-    completion_reasons: list[str] = Field(default_factory=list)
-    basis: IndicatorBasis = Field(default_factory=IndicatorBasis)
-    conclusion: Signal = "UNAVAILABLE"
-    confidence: Literal["HIGH", "MEDIUM", "LOW", "UNAVAILABLE"] = "UNAVAILABLE"
-    as_of: date | None = None
-    fetched_at: datetime | None = None
-    provider_fetched_at: datetime | None = None
-    received_at: datetime | None = None
-    freshness: Literal["RECENT", "STALE", "INVALID", "UNKNOWN"] = "UNKNOWN"
-    missing_indicators: dict[str, str] = Field(default_factory=dict)
-    agreements: list[str] = Field(default_factory=list)
-    conflicts: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-
-
-class Evidence(Model):
-    source: str
-    chunk_id: str
-    text: str
-    score: float = Field(ge=0, le=1)
-    kind: Literal["DATA", "METHODOLOGY", "DEMO"]
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class ToolCall(Model):
-    name: str
-    arguments: dict[str, Any] = Field(default_factory=dict)
-    step_number: int = Field(default=0, ge=0)
-
-
-class ToolResult(Model):
-    tool_name: str
-    success: bool
-    data: dict[str, Any] = Field(default_factory=dict)
-    error: ErrorInfo | None = None
-    latency_ms: float = 0
-    operation_key: str | None = None
-    attempts: int = 0
-    max_attempts: int = 2
-    error_kind: str | None = None
-    can_retry: bool = False
-    retry_budget_exhausted: bool = False
-
-
-class AgentDecision(Model):
-    action: Literal["CALL_TOOL", "CLARIFY", "FINAL_ANSWER", "ABSTAIN"]
-    tool_name: str | None = None
-    tool_args: dict[str, Any] = Field(default_factory=dict)
-    reason: str = Field(min_length=1)
-    missing_information: list[str] = Field(default_factory=list)
-    confidence: float = Field(ge=0, le=1)
-    intent: UserIntent | None = None
-    interpretation: str = ""
-
-    @model_validator(mode="after")
-    def action_shape(self):
-        if self.action == "CALL_TOOL" and not self.tool_name:
-            raise ValueError("CALL_TOOL requires tool_name")
-        if self.action != "CALL_TOOL" and (self.tool_name or self.tool_args):
-            raise ValueError("Terminal action cannot call tools")
-        return self
-
-
-class Dimension(Model):
-    status: Literal[
-        "BULLISH",
-        "BEARISH",
-        "NEUTRAL",
-        "POSITIVE",
-        "MIXED",
-        "NEGATIVE",
-        "INSUFFICIENT_DATA",
-        "NOT_REQUESTED",
-        "SOURCE_ERROR",
-        "STALE",
-        "INVALID_DATA",
-        "UNVERIFIED",
-        "ASSET_NOT_FOUND",
-        "AMBIGUOUS_ASSET",
-        "UNSUPPORTED_ASSET",
-    ] = "INSUFFICIENT_DATA"
-    metrics: TechnicalMetrics | None = None
-    history_only_metrics: TechnicalMetrics | None = None
-    assessment: TechnicalAssessment | None = None
-    narrative_origin: Literal["deterministic"] | None = None
-    evidence: list[Evidence] = Field(default_factory=list)
-    interpretation: str = ""
-    limitations: list[str] = Field(default_factory=list)
-
-
-class IntegratedView(Model):
-    agreements: list[str] = Field(default_factory=list)
-    conflicts: list[str] = Field(default_factory=list)
-    risks: list[str] = Field(default_factory=list)
-
-
-class DataQuality(Model):
-    missing_information: list[str] = Field(default_factory=list)
-    stale_data: bool = False
-    abstentions: list[str] = Field(default_factory=list)
-
-
-class Generation(Model):
-    mode: Literal["SIMULATED", "LLM_ORCHESTRATED", "DETERMINISTIC_FALLBACK", "FAILED"] = "SIMULATED"
-    llm_status: Literal[
-        "NOT_USED",
-        "SUCCEEDED",
-        "RATE_LIMITED",
-        "QUOTA_EXHAUSTED",
-        "UNAVAILABLE",
-        "INVALID_OUTPUT",
-        "CONFIGURATION_ERROR",
-        "FAILED",
-    ] = "NOT_USED"
-    provider: str | None = None
-    requested_model: str | None = None
-    model: str | None = None
-    model_version: str | None = None
-    attempts: int = 0
-    retry_after_seconds: float | None = Field(default=None, ge=0)
-    warnings: list[str] = Field(default_factory=list)
-
-
-class EditorialOptions(Model):
-    focus: Literal["overview", "trend", "momentum", "risk"] = "overview"
-    include_sections: list[Literal["overview", "trend", "momentum", "risk"]] = Field(
-        default_factory=lambda: ["overview", "trend", "momentum", "risk"],
-        min_length=1,
-        max_length=4,
-    )
-    review_note: str = Field(default="", max_length=500)
-
-    @model_validator(mode="after")
-    def valid_sections(self):
-        if len(set(self.include_sections)) != len(self.include_sections):
-            raise ValueError("Sections must be unique")
-        if self.focus not in self.include_sections:
-            raise ValueError("Focus must be included")
-        if any(ord(c) < 32 and c not in "\n\t" for c in self.review_note):
-            raise ValueError("Control characters are not allowed")
-        return self
-
-
-class PendingActionResponse(Model):
-    action_id: str
-    action_type: Literal["FINALIZE_TECHNICAL_REPORT"] = "FINALIZE_TECHNICAL_REPORT"
-    status: Literal["PENDING", "MODIFIED", "APPROVED", "REJECTED", "EXECUTED"]
-    version: int = Field(ge=1)
-    summary: str
-    ticker: Ticker
-    as_of: date
-    proposed_payload: EditorialOptions
-    editable_fields: list[str] = Field(
-        default_factory=lambda: ["focus", "include_sections", "review_note"]
-    )
-    available_actions: list[Literal["approve", "modify", "reject"]]
-    trace_id: str
-    session_id: str
-
-
-class ReportPublication(Model):
-    action_id: str
-    approved_version: int = Field(ge=1)
-    snapshot_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    editorial: EditorialOptions
-    sections: dict[str, str]
-
-
-class FinalAnalysis(Model):
-    status: Literal["ANSWER", "CLARIFY", "ABSTAIN", "ERROR", "PAUSED"]
-    pending_action: PendingActionResponse | None = None
-    publication: ReportPublication | None = None
-    ticker: Ticker | None = None
-    company_name: str | None = None
-    analysis_type: Literal["technical", "fundamental", "full"]
-    as_of: date | None = None
-    executive_summary: str
-    generation: Generation = Field(default_factory=Generation)
-    technical: Dimension = Field(default_factory=Dimension)
-    fundamental: Dimension = Field(default_factory=Dimension)
-    integrated_view: IntegratedView = Field(default_factory=IntegratedView)
-    data_quality: DataQuality = Field(default_factory=DataQuality)
-    sources: list[str] = Field(default_factory=list)
-    trace_id: str
-    session_id: str
-    errors: list[ErrorInfo] = Field(default_factory=list)
-
-
-class AgentState(Model):
-    session_id: str = Field(default_factory=lambda: str(uuid4()))
-    trace_id: str = Field(default_factory=lambda: str(uuid4()))
-    user_request: str
-    resolved_asset: AssetResolution | None = None
-    asset_validation_quote: QuoteSnapshot | None = Field(default=None, exclude=True)
-    asset_validation_quote_attempted: bool = Field(default=False, exclude=True)
-    intent: UserIntent = Field(default_factory=UserIntent)
-    request_intent_assessment: RequestIntentAssessment = Field(
-        default_factory=RequestIntentAssessment, exclude=True
-    )
-    observations: list[ToolResult] = Field(default_factory=list)
-    tool_calls: list[ToolCall] = Field(default_factory=list)
-    technical_data: MarketHistory | None = None
-    technical_metrics: TechnicalMetrics | None = None
-    technical_assessment: TechnicalAssessment | None = None
-    technical_evaluated_at: AwareDatetime | None = Field(default=None, exclude=True)
-    missing_information: list[str] = Field(default_factory=list)
-    errors: list[ErrorInfo] = Field(default_factory=list)
-    trace_events: list[dict[str, Any]] = Field(default_factory=list, exclude=True)
-    iteration_count: int = 0
-    status: Literal["RUNNING", "ANSWER", "CLARIFY", "ABSTAIN", "ERROR", "PAUSED"] = "RUNNING"

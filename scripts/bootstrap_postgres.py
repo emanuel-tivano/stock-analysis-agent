@@ -100,7 +100,7 @@ def main() -> None:
     upsert_env(Path(".env"), ENV_KEY, database_url)
     print("PostgreSQL local preparado y TEST_DATABASE_URL guardada en .env.")
     print(
-        "Ejecutá: .venv\\Scripts\\python -m pytest -q -m live "
+        "Ejecutá: .\\.venv\\Scripts\\python.exe -m pytest -q -m live "
         "tests\\integration\\test_postgres_live.py"
     )
 

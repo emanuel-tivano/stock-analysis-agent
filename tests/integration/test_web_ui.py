@@ -19,7 +19,6 @@ def test_root_and_static_assets_are_served(make_agent):
     assert 'aria-live="polite"' in page.text
     assert 'id="conversation"' in page.text
     assert 'class="conversation is-empty"' in page.text
-    assert 'data-state="empty"' in page.text
     assert 'href="/assets/favicon.svg"' in page.text
     assert "No ingreses datos personales o sensibles" in page.text
     assert 'aria-describedby="message-help privacy-note"' in page.text
@@ -37,8 +36,11 @@ def test_root_and_static_assets_are_served(make_agent):
     assert 'addDetailRow(list, "Momentum state"' not in script.text
     assert 'addDetailRow(list, "Trace ID"' not in script.text
     assert 'conversation.classList.toggle("is-empty", empty)' in script.text
-    assert 'conversation.dataset.state = empty ? "empty" : "active"' in script.text
     assert "function formatVisibleText(value)" in script.text
+    assert "async function requestJson(url, options = {}, config = {})" in script.text
+    assert "function apiErrorMessage(data, fallbackMessage)" in script.text
+    assert 'typeof data?.detail === "string"' in script.text
+    assert 'response.headers.get("Retry-After")' in script.text
 
 
 def test_chat_returns_human_projection_and_preserves_session(make_agent):

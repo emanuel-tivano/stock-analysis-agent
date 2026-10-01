@@ -11,9 +11,11 @@ from merval_agent.domain.actions import (
     ApproveActionRequest,
     ModifyActionRequest,
     PendingAction,
+    action_event_record,
     canonical,
+    decision_conflict,
     digest,
-    finalize,
+    transition_action,
 )
 from merval_agent.domain.models import AgentState, FinalAnalysis, now
 from merval_agent.memory.actions import ActionConflict, ActionNotFound, action_message
@@ -229,20 +231,14 @@ class PostgresRepository:
         key_hash=None,
         reason="PROPOSED",
     ) -> None:
-        record = {
-            "event": name,
-            "action_id": str(action.action_id),
-            "trace_id": action.trace_id,
-            "session_id": action.session_id,
-            "version": action.version,
-            "transition": f"{previous}->{action.status}",
-            "timestamp": action.updated_at.isoformat(),
-            "outcome": "CONFLICT" if name == "ACTION_CONFLICT" else action.status,
-            "actor": actor,
-            "reason": reason,
-            "payload_sha256": digest(action.proposed_payload),
-            "idempotency_key_sha256": key_hash,
-        }
+        record = action_event_record(
+            action,
+            name,
+            previous,
+            actor=actor,
+            key_hash=key_hash,
+            reason=reason,
+        )
         db.execute(
             "INSERT INTO action_events(action_id,event,proposal) VALUES (%s,%s,%s)",
             (str(action.action_id), canonical(record), canonical(action.proposed_payload)),
@@ -289,10 +285,8 @@ class PostgresRepository:
                 return ActionDecisionResponse.model_validate_json(saved[1])
             if saved:
                 conflict = "La clave de idempotencia ya se usó con otra decisión."
-            elif action.version != request.expected_version:
-                conflict = "La propuesta cambió. Recuperá la versión actual antes de decidir."
-            elif action.status not in ("PENDING", "MODIFIED"):
-                conflict = "La acción ya fue resuelta; no puede modificarse ni ejecutarse otra vez."
+            else:
+                conflict = decision_conflict(action, request.expected_version)
 
             if conflict:
                 action.updated_at = now()
@@ -307,67 +301,29 @@ class PostgresRepository:
                 )
             else:
                 previous = action.status
-                action.updated_at = now()
-                action.human_decision = decision
-                action.human_comment = request.comment
-                if decision == "modify":
-                    action.version += 1
-                    action.proposed_payload = request.changes.model_copy(deep=True)
-                    action.status = "MODIFIED"
+                transition = transition_action(
+                    action,
+                    decision,
+                    request,
+                    decided_at=now(),
+                )
+                action = transition.action
+                for transition_event in transition.events:
                     self._action_event(
                         db,
-                        action,
-                        "ACTION_MODIFIED",
-                        previous,
-                        actor="human",
+                        transition_event.action,
+                        transition_event.name,
+                        transition_event.previous,
+                        actor=transition_event.actor,
                         key_hash=key_hash,
-                        reason="EDITORIAL_CHANGE",
+                        reason=transition_event.reason,
                     )
-                    message = "Propuesta modificada; todavía requiere aprobación."
-                elif decision == "reject":
-                    action.status = "REJECTED"
-                    action.resolved_at = action.updated_at
-                    self._action_event(
-                        db,
-                        action,
-                        "ACTION_REJECTED",
-                        previous,
-                        actor="human",
-                        key_hash=key_hash,
-                        reason="HUMAN_REJECTION",
-                    )
-                    message = "Informe rechazado. No se publicó; la auditoría se conserva."
-                else:
-                    action.status = "APPROVED"
-                    action.approved_payload_sha256 = digest(action.proposed_payload)
-                    self._action_event(
-                        db,
-                        action,
-                        "ACTION_APPROVED",
-                        previous,
-                        actor="human",
-                        key_hash=key_hash,
-                        reason="EXACT_VERSION_APPROVAL",
-                    )
-                    action.result = finalize(action)
+                if action.result:
                     db.execute(
                         "INSERT INTO report_publications(action_id,trace_id,result) "
                         "VALUES (%s,%s,%s)",
                         (str(action_id), action.trace_id, action.result.model_dump_json()),
                     )
-                    action.status = "EXECUTED"
-                    action.resolved_at = action.updated_at
-                    self._action_event(
-                        db,
-                        action,
-                        "ACTION_EXECUTED",
-                        "APPROVED",
-                        key_hash=key_hash,
-                        reason="LOCAL_REPORT_FINALIZED",
-                    )
-                    message = "Informe finalizado con la evidencia guardada, sin nuevas consultas."
-
-                action = PendingAction.model_validate(action.model_dump())
                 updated = db.execute(
                     "UPDATE pending_actions SET status=%s,version=%s,document=%s "
                     "WHERE action_id=%s AND version=%s AND status=%s",
@@ -383,7 +339,7 @@ class PostgresRepository:
                 if updated.rowcount != 1:
                     raise ActionConflict("La propuesta cambió durante la decisión.")
                 response = ActionDecisionResponse(
-                    action=action.public(), message=message, result=action.result
+                    action=action.public(), message=transition.message, result=action.result
                 )
                 db.execute(
                     "INSERT INTO action_decisions "
@@ -392,14 +348,7 @@ class PostgresRepository:
                 )
                 db.execute(
                     "UPDATE analyses SET final_status=%s WHERE trace_id=%s",
-                    (
-                        "ANSWER"
-                        if action.result
-                        else "REJECTED"
-                        if decision == "reject"
-                        else "PAUSED",
-                        action.trace_id,
-                    ),
+                    (transition.analysis_status, action.trace_id),
                 )
                 if action.result:
                     db.execute(

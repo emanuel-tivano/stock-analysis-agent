@@ -166,7 +166,7 @@ def create_app(
         return request.app.state.agent.repository.decide_action(action_id, "reject", body)
 
     @app.middleware("http")
-    async def json_charset(request, call_next):
+    async def api_boundary(request, call_next):
         bucket = protected_bucket(request.method, request.url.path)
         response = None
         if bucket is not None:

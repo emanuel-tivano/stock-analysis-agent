@@ -13,7 +13,44 @@ const newConversationButton = document.querySelector("#new-conversation");
 
 let sessionId = sessionStorage.getItem(SESSION_KEY);
 
-class UserFacingError extends Error {}
+class UserFacingError extends Error {
+  constructor(message, status = null) {
+    super(message);
+    this.name = "UserFacingError";
+    this.status = status;
+  }
+}
+
+function rateLimitMessage(message, response) {
+  if (response.status !== 429) return message;
+  const retryAfter = Number.parseInt(response.headers.get("Retry-After"), 10);
+  if (!Number.isInteger(retryAfter) || retryAfter <= 0) return message;
+  return `${message} Podés reintentar en ${retryAfter} segundos.`;
+}
+
+function apiErrorMessage(data, fallbackMessage) {
+  if (typeof data?.error?.message === "string") return data.error.message;
+  if (typeof data?.detail === "string") return data.detail;
+  return fallbackMessage || "No se pudo completar la solicitud.";
+}
+
+async function requestJson(url, options = {}, config = {}) {
+  const response = await fetch(url, options);
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new UserFacingError(
+      "El servicio devolvió una respuesta inesperada. Intentá nuevamente.",
+      response.status,
+    );
+  }
+  if (!response.ok && !(config.allowedStatuses || []).includes(response.status)) {
+    const message = apiErrorMessage(data, config.fallbackMessage);
+    throw new UserFacingError(rateLimitMessage(message, response), response.status);
+  }
+  return { response, data };
+}
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -54,7 +91,6 @@ function setBusy(busy) {
 
 function setConversationEmpty(empty) {
   conversation.classList.toggle("is-empty", empty);
-  conversation.dataset.state = empty ? "empty" : "active";
 }
 
 function scrollToLatest() {
@@ -254,22 +290,13 @@ async function submitMessage(text) {
   try {
     const payload = { message: query };
     if (sessionId) payload.session_id = sessionId;
-    const response = await fetch("/chat", {
+    const { data } = await requestJson("/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
+    }, {
+      fallbackMessage: "No pude procesar la consulta.",
     });
-    let data;
-    try {
-      data = await response.json();
-    } catch {
-      throw new UserFacingError(
-        "El servicio devolvió una respuesta inesperada. Intentá nuevamente.",
-      );
-    }
-    if (!response.ok) {
-      throw new UserFacingError(data.error?.message || "No pude procesar la consulta.");
-    }
     sessionId = data.session_id;
     sessionStorage.setItem(SESSION_KEY, sessionId);
     renderAgentMessage(data);
@@ -441,24 +468,27 @@ function renderAction(action) {
     article.setAttribute("aria-busy", "true");
     live.textContent = "Guardando decisión…";
     try {
-      const response = await fetch(`/agent/actions/${action.action_id}/${decision}`, {
+      const { response, data } = await requestJson(`/agent/actions/${action.action_id}/${decision}`, {
         method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload),
+      }, {
+        allowedStatuses: [409],
+        fallbackMessage: "No se pudo guardar la decisión. Reintentá; se conservará la misma clave.",
       });
-      const data = await response.json();
       if (response.status === 409) {
         live.textContent = "La acción cambió o ya fue resuelta. Recuperando su estado…";
         await recoverAction(action.action_id, action.session_id);
         statusRegion.textContent = "Conflicto resuelto: revisá el estado actualizado antes de decidir.";
         return;
       }
-      if (!response.ok) throw new UserFacingError(response.status === 422
-        ? "La modificación no es válida. Revisá el enfoque, las secciones y el comentario."
-        : "No se pudo guardar la decisión. Reintentá; se conservará la misma clave.");
       renderAction(data.action);
       statusRegion.textContent = data.message;
       if (data.result) renderPublishedReport(data.result);
     } catch (error) {
-      live.textContent = error instanceof UserFacingError ? error.message : "No se pudo confirmar la decisión. Reintentá o recargá para recuperar su estado.";
+      live.textContent = error instanceof UserFacingError
+        ? (error.status === 422
+          ? "La modificación no es válida. Revisá el enfoque, las secciones y el comentario."
+          : error.message)
+        : "No se pudo confirmar la decisión. Reintentá o recargá para recuperar su estado.";
     } finally {
       busy = false;
       editor.disabled = false;
@@ -479,12 +509,20 @@ function renderAction(action) {
 }
 
 async function recoverAction(actionId, ownerSession) {
-  const response = await fetch(`/agent/actions/${actionId}?session_id=${encodeURIComponent(ownerSession)}`);
-  if (!response.ok) {
-    if (response.status === 404) clearActiveAction(actionId);
-    throw new UserFacingError("No se pudo recuperar la revisión de esta sesión.");
+  let data;
+  try {
+    ({ data } = await requestJson(
+      `/agent/actions/${actionId}?session_id=${encodeURIComponent(ownerSession)}`,
+      {},
+      { fallbackMessage: "No se pudo recuperar la revisión de esta sesión." },
+    ));
+  } catch (error) {
+    if (error instanceof UserFacingError && error.status === 404) clearActiveAction(actionId);
+    throw new UserFacingError(
+      "No se pudo recuperar la revisión de esta sesión.",
+      error instanceof UserFacingError ? error.status : null,
+    );
   }
-  const data = await response.json();
   renderAction(data.action);
   if (data.result) renderPublishedReport(data.result);
 }

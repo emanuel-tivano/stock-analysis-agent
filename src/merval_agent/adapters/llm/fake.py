@@ -4,7 +4,7 @@ from collections.abc import Callable
 from merval_agent.agents.intent import explicit_analysis_type, explicit_full_request
 from merval_agent.domain.models import TICKER_PATTERN, AgentDecision, AgentState, UserIntent
 from merval_agent.domain.policy import DEFAULT_TECHNICAL_RANGE
-from merval_agent.tools.assets import folded
+from merval_agent.tools.assets import folded, symbol_candidates
 
 
 class FakeLLMProvider:
@@ -62,27 +62,10 @@ class FakeLLMProvider:
             )
 
         if not state.observations:
-            candidates = re.findall(r"(?<!\w)[A-Z][A-Z0-9]{1,4}(?!\w)", state.user_request)
             candidates = [
                 value
-                for value in candidates
-                if value
-                not in {
-                    "ADR",
-                    "NYSE",
-                    "ARS",
-                    "USD",
-                    "ROE",
-                    "EPS",
-                    "FCF",
-                    "RSI",
-                    "SMA",
-                    "EMA",
-                    "MACD",
-                    "SYSTEM",
-                    "CALL",
-                    "TOOL",
-                }
+                for value in symbol_candidates(state.user_request)
+                if re.fullmatch(r"[A-Z][A-Z0-9]{1,4}", value)
             ]
             # Repeated-letter placeholders stay an offline negative case for the simulator.
             candidates = [value for value in candidates if len(set(value)) > 1]

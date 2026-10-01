@@ -6,7 +6,7 @@ import math
 from datetime import UTC, date, datetime, timedelta
 from ipaddress import ip_address
 from pathlib import Path
-from time import perf_counter, sleep
+from time import monotonic, perf_counter, sleep
 from urllib.parse import urlsplit
 
 import httpx
@@ -16,13 +16,34 @@ from merval_agent.adapters.llm.fake import FakeLLMProvider
 from merval_agent.adapters.market_tracker import ArgentinaMarketTrackerClient
 from merval_agent.agents.equity_agent import EquityAgent
 from merval_agent.bootstrap import build_provider
-from merval_agent.evaluation_rate_limit import SequentialLLMRateLimiter
 from merval_agent.memory.sqlite import SQLiteRepository
 from merval_agent.tools.registry import build_registry
 
 DATASET_VERSION = "technical-v4"
 EVALUATOR_VERSION = "phase2-v5"
 ROOT = Path(__file__).resolve().parents[2]
+
+
+class SequentialLLMRateLimiter:
+    """Pace sequential evaluator requests by their monotonic start time."""
+
+    def __init__(self, min_interval_seconds):
+        if not math.isfinite(min_interval_seconds) or min_interval_seconds < 0:
+            raise ValueError("Interval must be finite and nonnegative")
+        self.min_interval_seconds = min_interval_seconds
+        self._last_request_started = None
+
+    def __call__(self, request):
+        if not self.min_interval_seconds:
+            return
+        if self._last_request_started is not None:
+            remaining = self.min_interval_seconds - (monotonic() - self._last_request_started)
+            while remaining > 0:
+                sleep(remaining)
+                remaining = self.min_interval_seconds - (
+                    monotonic() - self._last_request_started
+                )
+        self._last_request_started = monotonic()
 
 
 def provider_environment(base_url):

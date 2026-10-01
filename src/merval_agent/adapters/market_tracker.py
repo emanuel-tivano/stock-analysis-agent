@@ -269,6 +269,32 @@ def quote_timestamp(value) -> datetime:
     return TypeAdapter(AwareDatetime).validate_python(datetime.fromisoformat(value))
 
 
+def normalize_quote_snapshot(
+    payload: dict,
+    ticker: str,
+    market: str,
+    source: str,
+    *,
+    received_at: datetime,
+    stale_after_days: int,
+) -> QuoteSnapshot:
+    """Build an eligible quote snapshot from one validated provider response."""
+    bar = normalize_quote_bar(payload, ticker, market)
+    data = payload["data"]
+    observed_at = quote_timestamp(data.get("timestamp"))
+    today = received_at.astimezone(MARKET_TIMEZONE).date()
+    if observed_at > received_at or stale_date(bar.date, today, stale_after_days):
+        raise ValueError("Quote timestamp is future or too old")
+    return QuoteSnapshot(
+        bar=bar,
+        source=source,
+        observed_at=observed_at,
+        provider_fetched_at=provider_fetched_timestamp(payload),
+        received_at=received_at,
+        currency=data.get("currency"),
+    )
+
+
 class ArgentinaMarketTrackerClient:
     def __init__(
         self,
@@ -288,14 +314,6 @@ class ArgentinaMarketTrackerClient:
         if quote_policy not in ("include_provisional_ohlc", "history_only"):
             raise ValueError("Unsupported quote policy")
         self.quote_policy = quote_policy
-
-    def get_quote(
-        self,
-        symbol: str,
-        market: str = "bCBA",
-    ) -> Bar:
-        # Preserve the public price-only accessor; composition uses the full snapshot.
-        return self._get_quote_snapshot(symbol, market).bar
 
     def validate_instrument(
         self,
@@ -382,18 +400,13 @@ class ArgentinaMarketTrackerClient:
                 classification = "DOMESTIC_EQUITY_CANDIDATE"
             quote = None
             try:
-                bar = normalize_quote_bar(payload, ticker, market)
-                observed_at = quote_timestamp(data.get("timestamp"))
-                today = received_at.astimezone(MARKET_TIMEZONE).date()
-                if observed_at > received_at or stale_date(bar.date, today, self.stale_after_days):
-                    raise ValueError("Quote timestamp is future or too old")
-                quote = QuoteSnapshot(
-                    bar=bar,
+                quote = normalize_quote_snapshot(
+                    payload,
+                    ticker,
+                    market,
                     source=str(response.url),
-                    observed_at=observed_at,
-                    provider_fetched_at=provider_fetched_timestamp(payload),
                     received_at=received_at,
-                    currency=data.get("currency"),
+                    stale_after_days=self.stale_after_days,
                 )
             except (ExternalServiceError, ValueError, ValidationError):
                 # The listing is validated, but the quote remains ineligible as price evidence.
@@ -430,18 +443,13 @@ class ArgentinaMarketTrackerClient:
             response.raise_for_status()
 
             payload = response.json()
-            bar = normalize_quote_bar(payload, ticker, market)
-            observed_at = quote_timestamp(payload["data"]["timestamp"])
-            today = received_at.astimezone(MARKET_TIMEZONE).date()
-            if observed_at > received_at or stale_date(bar.date, today, self.stale_after_days):
-                raise ValueError("Quote timestamp is future or too old")
-            return QuoteSnapshot(
-                bar=bar,
+            return normalize_quote_snapshot(
+                payload,
+                ticker,
+                market,
                 source=str(response.url),
-                observed_at=observed_at,
-                provider_fetched_at=provider_fetched_timestamp(payload),
                 received_at=received_at,
-                currency=payload["data"].get("currency"),
+                stale_after_days=self.stale_after_days,
             )
 
         except (httpx.HTTPError, ValueError, ValidationError) as exc:
