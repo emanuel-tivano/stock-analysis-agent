@@ -71,7 +71,7 @@ class FakeLLMProvider:
             candidates = [value for value in candidates if len(set(value)) > 1]
             if "BYMA" in candidates and len(candidates) > 1:
                 candidates = [value for value in candidates if value != "BYMA"]
-            proposal = {"query": state.user_request}
+            proposal = {}
             if len(candidates) == 1:
                 proposal.update(symbol=candidates[-1], market="bCBA")
             return call("resolve_asset", **proposal)

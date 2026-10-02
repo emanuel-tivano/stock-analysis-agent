@@ -2,7 +2,7 @@
 
 | Tool | Cuándo usar | Cuándo no |
 |---|---|---|
-| resolve_asset(query) | Antes de datos; nombre ambiguo | No asumir instrumento por semejanza |
+| resolve_asset(symbol, market) | Antes de datos; nombre ambiguo; el texto original lo aporta la aplicación | No asumir instrumento por semejanza |
 | get_market_history(ticker, range) | Técnico; ampliar rango si falta muestra | Pedidos fuera de alcance |
 | calculate_technical_indicators(ticker) | Sobre historial almacenado | Sin OHLCV; nunca inyectar precios del LLM |
 

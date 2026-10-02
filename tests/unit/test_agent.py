@@ -19,6 +19,10 @@ def test_technical_does_not_call_fundamentals(make_agent):
         "get_market_history",
         "calculate_technical_indicators",
     ]
+    assert repo.records[-1][0].tool_calls[0].arguments == {
+        "symbol": "GGAL",
+        "market": "bCBA",
+    }
     assert result.trace_id
 
 
@@ -57,7 +61,7 @@ def test_max_steps(make_agent):
         lambda s: AgentDecision(
             action="CALL_TOOL",
             tool_name="resolve_asset",
-            tool_args={"query": "GGAL"},
+            tool_args={"symbol": "GGAL", "market": "bCBA"},
             reason="repeat",
             confidence=1,
         )
@@ -112,7 +116,11 @@ def test_business_guard_rejects_unknown_tool(make_agent):
             "confidence": 1,
             "intent": {"analysis_type": "technical"},
             "tool_name": "resolve_asset" if state.iteration_count == 1 else "unsupported_tool",
-            "tool_args": {"query": "GGAL"} if state.iteration_count == 1 else {"ticker": "GGAL"},
+            "tool_args": (
+                {"symbol": "GGAL", "market": "bCBA"}
+                if state.iteration_count == 1
+                else {"ticker": "GGAL"}
+            ),
         }
 
     agent, repo = make_agent(provider=FakeLLMProvider(script), max_steps=2)
@@ -158,7 +166,7 @@ def test_observation_drives_retry_with_longer_range(make_agent, payload):
                 "action": "CALL_TOOL",
                 "intent": {"analysis_type": "technical"},
                 "tool_name": "resolve_asset",
-                "tool_args": {"query": "GGAL"},
+                "tool_args": {"symbol": "GGAL", "market": "bCBA"},
             }
         if not state.technical_data or (
             state.technical_metrics and state.technical_metrics.sma20 is None

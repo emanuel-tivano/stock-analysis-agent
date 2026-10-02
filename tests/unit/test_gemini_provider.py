@@ -88,7 +88,10 @@ def test_native_request_response_usage_privacy(make_gemini, make_agent, caplog):
     )
     parts = body["contents"][0]["parts"]
     assert json.loads(parts[0]["text"]) == {"user_request": "private-user-request"}
-    assert "agent_context" in json.loads(parts[1]["text"])
+    context = json.loads(parts[1]["text"])["agent_context"]
+    resolve_schema = next(tool for tool in context["tools"] if tool["name"] == "resolve_asset")
+    assert set(resolve_schema["parameters"]["properties"]) == {"symbol", "market"}
+    assert len(context["tools"]) == 3
     assert body["generationConfig"]["responseMimeType"] == "application/json"
     assert body["generationConfig"]["responseJsonSchema"]["title"] == "AgentDecision"
     assert "tools" not in body

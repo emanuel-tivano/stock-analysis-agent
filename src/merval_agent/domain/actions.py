@@ -288,7 +288,7 @@ def transition_action(
         )
         message = "Informe rechazado. No se publicó; la auditoría se conserva."
         analysis_status = "REJECTED"
-    else:
+    elif decision == "approve":
         action.status = "APPROVED"
         action.approved_payload_sha256 = digest(action.proposed_payload)
         events.append(
@@ -313,6 +313,8 @@ def transition_action(
         )
         message = "Informe finalizado con la evidencia guardada, sin nuevas consultas."
         analysis_status = "ANSWER"
+    else:
+        raise ValueError("Unsupported decision")
 
     action = PendingAction.model_validate(action.model_dump())
     return ActionTransition(action, tuple(events), message, analysis_status)

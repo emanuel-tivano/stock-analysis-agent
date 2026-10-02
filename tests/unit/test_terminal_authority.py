@@ -25,7 +25,7 @@ def terminal_technical_provider(action, captured=None):
                 "action": "CALL_TOOL",
                 "intent": {"analysis_type": "technical"},
                 "tool_name": "resolve_asset",
-                "tool_args": {"query": "GGAL"},
+                "tool_args": {"symbol": "GGAL", "market": "bCBA"},
             }
         if state.technical_data is None:
             return {

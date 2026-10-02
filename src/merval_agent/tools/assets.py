@@ -88,7 +88,6 @@ def resolve_asset(
     *,
     symbol: str | None = None,
     market: str | None = None,
-    company_name: str | None = None,
     validator: Callable[[str, str], InstrumentValidation] | None = None,
 ) -> AssetResolution:
     """Resolve an LLM proposal; only catalog/provider evidence may produce RESOLVED."""

@@ -21,12 +21,10 @@ from .operations import MAX_TOOL_ATTEMPTS, check_operation, operation_key, tool_
 
 
 class ResolveArgs(Model):
-    query: str = Field(min_length=1, max_length=2000)
     symbol: str | None = Field(
         default=None, min_length=2, max_length=30, pattern=r"^[A-Za-z0-9._-]+$"
     )
     market: str | None = Field(default=None, min_length=2, max_length=20)
-    company_name: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class AssetArgs(Model):
@@ -147,7 +145,6 @@ def build_registry(market) -> ToolRegistry:
             state.user_request,
             symbol=args.symbol,
             market=args.market,
-            company_name=args.company_name,
             validator=validate,
         )
         state.asset_validation_quote = (
@@ -163,9 +160,10 @@ def build_registry(market) -> ToolRegistry:
             Tool(
                 "resolve_asset",
                 (
-                    "Propose and resolve a local Argentine equity. Supply the original query plus "
-                    "the interpreted symbol and market (canonical local market: bCBA). The proposal "
-                    "is validated by the application and is not evidence of existence."
+                    "Propose and resolve a local Argentine equity. Supply the interpreted symbol "
+                    "and market (canonical local market: bCBA). The original user request remains "
+                    "authoritative; the proposal is validated by the application and is not "
+                    "evidence of existence."
                 ),
                 ResolveArgs,
                 resolve,

@@ -1,7 +1,15 @@
+from datetime import UTC, datetime
+
 import pytest
 from pydantic import ValidationError
 
-from merval_agent.domain.actions import ApproveActionRequest, digest, requests_review
+from merval_agent.agents.finalization import _pending_review
+from merval_agent.domain.actions import (
+    ApproveActionRequest,
+    digest,
+    requests_review,
+    transition_action,
+)
 from merval_agent.domain.models import EditorialOptions
 
 
@@ -53,3 +61,21 @@ def test_length_boundaries_and_comment_is_not_an_instruction():
     assert ApproveActionRequest(
         session_id="x" * 100, idempotency_key="x" * 100, expected_version=1, comment="x" * 500
     )
+
+
+def test_unknown_domain_decision_cannot_approve(make_agent):
+    agent, repository = make_agent()
+    result = agent.run("Analizá técnicamente GGAL")
+    state = repository.records[-1][0]
+    action = _pending_review(state, result, "Prepará un informe técnico de GGAL")
+    assert action is not None
+    request = ApproveActionRequest(
+        session_id=action.session_id,
+        idempotency_key="invalid-decision",
+        expected_version=action.version,
+    )
+
+    with pytest.raises(ValueError, match="Unsupported decision"):
+        transition_action(action, "unknown", request, decided_at=datetime.now(UTC))
+    assert action.status == "PENDING"
+    assert action.human_decision is None

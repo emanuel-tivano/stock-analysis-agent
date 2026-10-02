@@ -165,10 +165,8 @@ def test_telecom_name_and_teco2_ticker_converge_across_public_endpoints(make_age
                 action="CALL_TOOL",
                 tool_name="resolve_asset",
                 tool_args={
-                    "query": state.user_request,
                     "symbol": "TECO2",
                     "market": "bCBA",
-                    "company_name": "Telecom Argentina",
                 },
                 intent={"analysis_type": "technical"},
                 reason="Semantic Telecom proposal",
